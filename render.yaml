@@ -1,0 +1,25 @@
+services:
+  # Backend Service
+  - type: web
+    name: freshscanx-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+    autoDeploy: false
+
+  # Frontend Service (Static Site) - Optional if you use Vercel for frontend
+  # If you want to deploy frontend on Render too:
+  # - type: static
+  #   name: freshscanx-frontend
+  #   env: static
+  #   buildCommand: npm install && npm run build
+  #   staticPublishPath: ./dist
+  #   envVars:
+  #     - key: VITE_API_URL
+  #       fromService:
+  #         type: web
+  #         name: freshscanx-backend
+  #         property: url

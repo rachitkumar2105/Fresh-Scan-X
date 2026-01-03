@@ -120,7 +120,8 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append('file', blob, 'scan.jpg');
 
-      const response = await fetch('http://localhost:8000/predict', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/predict`, {
         method: 'POST',
         body: formData,
       });

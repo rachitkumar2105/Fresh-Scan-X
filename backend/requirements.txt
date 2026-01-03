@@ -1,8 +1,8 @@
 fastapi
 uvicorn
 python-multipart
-torch
-torchvision
+torch --index-url https://download.pytorch.org/whl/cpu
+torchvision --index-url https://download.pytorch.org/whl/cpu
 pillow
 numpy
-opencv-python
+opencv-python-headless
