@@ -7,9 +7,8 @@ class FruitChecker(nn.Module):
         # n_date_classes corresponds to the fruits. ERROR log showed 15 classes.
         # We defaults to 15 to match the saved model weights.
         super().__init__()
-        # Use valid weights parameter instead of pretrained=True (which is deprecated/removed in newer torchvision)
-        # weights='DEFAULT' corresponds to the best available weights (IMAGENET1K_V1 for B3)
-        base = models.efficientnet_b3(weights='DEFAULT')
+        # weights=None to prevent downloading ImageNet weights (we load our own)
+        base = models.efficientnet_b3(weights=None)
         self.features = base.features
         self.pool = nn.AdaptiveAvgPool2d(1)
         # The notebook had:

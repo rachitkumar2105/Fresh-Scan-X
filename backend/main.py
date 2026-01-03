@@ -54,9 +54,13 @@ async def load_model():
     
     transform = get_transforms()
 
-@app.get("/")
+@app.get("/", methods=["GET", "HEAD"])
 def home():
     return {"message": "Fruit Freshness Scanner API is running"}
+
+@app.get("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "healthy"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
