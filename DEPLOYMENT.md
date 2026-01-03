@@ -1,44 +1,64 @@
-# Fruit Checker Backend Integration Walkthrough
+# Deployment Guide: Render Only (Manual Setup)`
 
-I have integrated the `fruit_checker_final.pth` model into a new FastAPI backend and connected it to the React frontend.
+This guide explains how to deploy both the **Backend** and **Frontend** entirely on Render, without using Blueprints.
 
-## Changes Made
+## Prerequisites
+- A [Render.com](https://render.com) account.
+- This repository pushed to your GitHub.
 
-### Backend
-- Created `backend/` directory.
-- Created `backend/model.py`: Contains the `FruitChecker` class definition (Updated to 15 output classes).
-- Created `backend/utils.py`: Contains image transforms and class mappings.
-- Created `backend/main.py`: FastAPI server with `/predict` endpoint.
-- Moved `fruit_checker_final.pth` to `backend/`.
-- **Render Optimization**: Updated `requirements.txt` to use CPU-only PyTorch versions to reduce slug size.
+---
 
-### Frontend
-- Modified `src/pages/Dashboard.tsx` to send captured images to `import.meta.env.VITE_API_URL` (dynamic) or verify locally.
-- Renamed `env.txt` to `.env` to ensure environment variables are loaded correctly.
+## Part 1: Deploy the Backend (Python)
+This service runs the AI model.
 
-### Configuration
-- Created `render.yaml`: A blueprint for deploying the backend on Render.
+1.  **Create Service**:
+    -   Go to your Render Dashboard.
+    -   Click **New +** and select **Web Service**.
+2.  **Connect Repo**:
+    -   Find your **Fresh-Scan-X** repository and click **Connect**.
+3.  **Configure Settings**:
+    -   **Name**: `freshscanx-backend` (or similar)
+    -   **Region**: (Choose closest to you)
+    -   **Runtime**: `Python 3`
+    -   **Build Command**: `pip install -r backend/requirements.txt`
+    -   **Start Command**: `python -m uvicorn backend.main:app --host 0.0.0.0 --port 10000`
+    -   **Instance Type**: `Free`
+4.  **Environment Variables** (Optional but recommended):
+    -   Key: `PYTHON_VERSION`
+    -   Value: `3.10.0`
+5.  **Deploy**:
+    -   Click **Create Web Service**.
+    -   Wait for the deployment to finish (Green "Live" badge).
+6.  **Copy URL**:
+    -   Copy the service URL from the dashboard (e.g., `https://freshscanx-backend.onrender.com`).
+    -   **Save this URL**, you need it for the frontend!
 
-## Verification
+---
 
-### Local Development
-To run the project locally with the new configuration:
-1. **Start Backend**: `python -m uvicorn backend.main:app --reload`
-2. **Start Frontend**: `npm run dev`
-3. **Verify**: Open `http://localhost:8080`, upload an image, and scan.
+## Part 2: Deploy the Frontend (React/Vite)
+This service hosts the user interface.
 
-## Deployment Guide (Render)
+1.  **Create Service**:
+    -   Go to your Render Dashboard.
+    -   Click **New +** and select **Static Site**.
+2.  **Connect Repo**:
+    -   Select the same **Fresh-Scan-X** repository.
+3.  **Configure Settings**:
+    -   **Name**: `freshscanx-frontend`
+    -   **Runtime**: `Node` (default)
+    -   **Build Command**: `npm install && npm run build`
+    -   **Publish Directory**: `dist`
+    -   **Instance Type**: `Free`
+4.  **Environment Variables (CRITICAL)**:
+    -   You MUST set this so the frontend knows where the backend is.
+    -   Key: `VITE_API_URL`
+    -   Value: `[PASTE_YOUR_BACKEND_URL_HERE]` (e.g., `https://freshscanx-backend.onrender.com`)
+    -   *Note: Ensure there is **no trailing slash** at the end of the URL.*
+5.  **Deploy**:
+    -   Click **Create Static Site**.
+    -   Wait for the deployment to finish.
 
-The project is now ready for deployment on Render.
+---
 
-1. **Push Code**: Ensure all changes are pushed to GitHub (Already done).
-2. **Create Web Service**:
-   - Go to [Render Dashboard](https://dashboard.render.com/).
-   - Click **New +** -> **Blueprint**.
-   - Connect your **Fresh-Scan-X** repository.
-   - Render will automatically detect `render.yaml` and configure the backend service.
-   - Click **Apply**.
-3. **Deploy Frontend (Vercel Recommended)**:
-   - Go to [Vercel](https://vercel.com).
-   - Import the same repository.
-   - Add Environment Variable: `VITE_API_URL` -> Value: `https://[your-render-backend-url].onrender.com`.
+## Part 3: Done!
+Visit your **Frontend URL** (provided by Render Static Site). Upload an image, and it will send it to your Backend service for analysis.
