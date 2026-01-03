@@ -366,7 +366,7 @@ export default function Dashboard() {
                     {scanResult.result}
                   </h3>
                   <p className="text-xl text-muted-foreground font-medium">
-                    {scanResult.fruitType}
+                    Detected: {scanResult.fruitType}
                   </p>
                 </div>
 

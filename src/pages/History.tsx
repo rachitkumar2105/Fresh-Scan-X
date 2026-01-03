@@ -181,7 +181,7 @@ export default function History() {
                       </div>
                       <div>
                         <p className="font-medium">
-                          {scan.fruit_type || 'Unknown Produce'}
+                          Fruit: {scan.fruit_type || 'Unknown Produce'}
                         </p>
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <span className="capitalize font-medium">
