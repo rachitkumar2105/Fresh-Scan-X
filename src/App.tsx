@@ -21,6 +21,9 @@ const App = () => {
 
     const wakeUpBackend = async (retries = 3, delay = 2000) => {
       try {
+        if (import.meta.env.PROD && apiUrl.includes('localhost')) {
+          console.error('CRITICAL: Running in production but VITE_API_URL is set to localhost. Backend connection will likely fail.');
+        }
         console.log(`Pinging backend at ${apiUrl}...`);
         const res = await fetch(`${apiUrl}/`);
         if (res.ok) {
