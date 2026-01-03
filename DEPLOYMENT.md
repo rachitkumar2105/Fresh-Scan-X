@@ -54,6 +54,13 @@ This service hosts the user interface.
     -   Key: `VITE_API_URL`
     -   Value: `[PASTE_YOUR_BACKEND_URL_HERE]` (e.g., `https://freshscanx-backend.onrender.com`)
     -   *Note: Ensure there is **no trailing slash** at the end of the URL.*
+
+    **Supabase Configuration (Required for Auth/History):**
+    -   Key: `VITE_SUPABASE_URL`
+    -   Value: `[YOUR_SUPABASE_URL]`
+    -   Key: `VITE_SUPABASE_PUBLISHABLE_KEY`
+    -   Value: `[YOUR_SUPABASE_ANON_KEY]`
+    -   *(You can find these in your local `.env` file or Supabase Dashboard)*
 5.  **Deploy**:
     -   Click **Create Static Site**.
     -   Wait for the deployment to finish.
