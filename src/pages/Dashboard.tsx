@@ -195,6 +195,18 @@ export default function Dashboard() {
     }
   };
 
+  const getSafetyMessage = () => {
+    if (!scanResult) return null;
+    switch (scanResult.result) {
+      case 'fresh':
+        return { text: "Safe for consumption", color: "text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400" };
+      case 'rotten':
+        return { text: "Unsafe for consumption", color: "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400" };
+      default:
+        return { text: "Analysis Inconclusive", color: "text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400" };
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
@@ -246,29 +258,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Scan Result Overlay */}
-              {scanResult && !scanning && (
-                <div className={cn(
-                  "absolute inset-0 flex items-center justify-center backdrop-blur-sm transition-all duration-500",
-                  scanResult.result === 'fresh' ? 'bg-primary/10' : 'bg-destructive/10'
-                )}>
-                  <div className={cn(
-                    "text-center p-8 rounded-2xl border-2 animate-scale-in",
-                    getResultColor()
-                  )}>
-                    <div className="flex justify-center mb-4 animate-float">
-                      {getResultIcon()}
-                    </div>
-                    <h3 className="text-2xl font-display font-bold uppercase mb-2">
-                      {scanResult.result}
-                    </h3>
-                    <p className="text-lg font-medium mb-1">{scanResult.fruitType}</p>
-                    <p className="text-sm opacity-80">
-                      Confidence: {scanResult.confidence.toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              )}
+
 
               {/* Placeholder */}
               {!cameraActive && !capturedImage && !scanning && (
@@ -361,6 +351,46 @@ export default function Dashboard() {
             </Button>
           )}
         </div>
+
+        {/* Result Section */}
+        {scanResult && !scanning && (
+          <Card className={cn("animate-scale-in border-2 overflow-hidden", getResultColor())}>
+            <CardContent className="p-8 text-center space-y-6">
+              <div className="flex flex-col items-center justify-center gap-4">
+                <div className="p-4 rounded-full bg-background shadow-lg animate-float">
+                  {getResultIcon()}
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-4xl font-display font-bold uppercase tracking-wider">
+                    {scanResult.result}
+                  </h3>
+                  <p className="text-xl text-muted-foreground font-medium">
+                    {scanResult.fruitType}
+                  </p>
+                </div>
+
+                <div className={cn(
+                  "px-6 py-2 rounded-full font-bold text-lg tracking-wide shadow-sm",
+                  getSafetyMessage()?.color
+                )}>
+                  {getSafetyMessage()?.text}
+                </div>
+
+                <div className="grid grid-cols-2 gap-8 w-full max-w-xs mt-4 pt-4 border-t border-border/50">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground uppercase tracking-widest text-xs">Confidence</p>
+                    <p className="text-2xl font-bold">{scanResult.confidence.toFixed(1)}%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground uppercase tracking-widest text-xs">Quality</p>
+                    <p className="text-2xl font-bold capitalize">{scanResult.result}</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tips */}
         <Card variant="default" className="animate-fade-in" style={{ animationDelay: '0.4s' }}>
