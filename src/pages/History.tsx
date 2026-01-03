@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
-import { 
-  History as HistoryIcon, 
-  CheckCircle, 
-  XCircle, 
+import {
+  History as HistoryIcon,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   Trash2,
   Calendar,
@@ -123,7 +123,7 @@ export default function History() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 animate-scale-in">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-scale-in">
           <Card variant="glass">
             <CardContent className="p-4 text-center">
               <p className="text-3xl font-display font-bold text-foreground">{scans.length}</p>

@@ -6,13 +6,14 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
-import { 
-  User, 
-  Mail, 
-  Calendar, 
+import {
+  User,
+  Mail,
+  Calendar,
   Save,
   Loader2,
-  CheckCircle
+  CheckCircle,
+  Lock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -23,6 +24,9 @@ export default function Profile() {
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -49,7 +53,7 @@ export default function Profile() {
 
   const saveProfile = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     try {
       const { error } = await supabase
@@ -60,7 +64,7 @@ export default function Profile() {
         }, { onConflict: 'user_id' });
 
       if (error) throw error;
-      
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       toast({
@@ -75,6 +79,50 @@ export default function Profile() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const updatePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Passwords do not match.',
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Password must be at least 6 characters.',
+      });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Success',
+        description: 'Your password has been updated.',
+      });
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update password.',
+      });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -136,9 +184,9 @@ export default function Profile() {
               </div>
             </div>
 
-            <Button 
-              onClick={saveProfile} 
-              variant="glow" 
+            <Button
+              onClick={saveProfile}
+              variant="glow"
               className="w-full"
               disabled={loading}
             >
@@ -157,6 +205,54 @@ export default function Profile() {
                   <Save className="h-4 w-4" />
                   Save Changes
                 </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Security / Password Change */}
+        <Card variant="default" className="animate-slide-up" style={{ animationDelay: '0.1s', animationFillMode: 'forwards' }}>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Lock className="h-5 w-5 text-primary" />
+              Security
+            </CardTitle>
+            <CardDescription>Update your password</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="Enter new password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={updatePassword}
+              variant="outline"
+              className="w-full"
+              disabled={passwordLoading || !newPassword || !confirmPassword}
+            >
+              {passwordLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Change Password'
               )}
             </Button>
           </CardContent>
@@ -184,7 +280,7 @@ export default function Profile() {
             <div className="flex items-center justify-between py-3">
               <span className="text-muted-foreground">Last Sign In</span>
               <span className="text-sm">
-                {user?.last_sign_in_at 
+                {user?.last_sign_in_at
                   ? format(new Date(user.last_sign_in_at), 'MMM d, yyyy h:mm a')
                   : 'N/A'
                 }
