@@ -15,12 +15,30 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => {
-  // Wake up backend on load
+  // Wake up backend on load with retry
   useEffect(() => {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    fetch(`${apiUrl}/`)
-      .then(() => console.log('Backend woken up'))
-      .catch((e) => console.error('Backend wake-up failed:', e));
+
+    const wakeUpBackend = async (retries = 3, delay = 2000) => {
+      try {
+        console.log(`Pinging backend at ${apiUrl}...`);
+        const res = await fetch(`${apiUrl}/`);
+        if (res.ok) {
+          console.log('Backend is awake and ready!');
+        } else {
+          throw new Error('Backend responded with error');
+        }
+      } catch (e) {
+        console.warn(`Backend wake-up attempt failed. Retries left: ${retries}`);
+        if (retries > 0) {
+          setTimeout(() => wakeUpBackend(retries - 1, delay * 1.5), delay);
+        } else {
+          console.error('Backend failed to wake up after multiple attempts.');
+        }
+      }
+    };
+
+    wakeUpBackend();
   }, []);
 
   return (
