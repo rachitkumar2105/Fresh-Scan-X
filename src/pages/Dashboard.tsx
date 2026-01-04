@@ -25,61 +25,13 @@ type ScanResult = {
 };
 
 export default function Dashboard() {
-  const [cameraActive, setCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const nativeInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
-
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setCameraActive(true);
-        setScanResult(null);
-        setCapturedImage(null);
-      }
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Camera Error',
-        description: 'Could not access camera. Please check permissions.',
-      });
-    }
-  }, [toast]);
-
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setCameraActive(false);
-  }, []);
-
-  const captureImage = useCallback(() => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
-        setCapturedImage(imageData);
-        stopCamera();
-      }
-    }
-  }, [stopCamera]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -168,7 +120,8 @@ export default function Dashboard() {
   const resetScan = () => {
     setCapturedImage(null);
     setScanResult(null);
-    stopCamera();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (nativeInputRef.current) nativeInputRef.current.value = '';
   };
 
   const getResultIcon = () => {
@@ -224,18 +177,9 @@ export default function Dashboard() {
         <Card variant="glass" className="animate-scale-in overflow-hidden">
           <CardContent className="p-6">
             <div className="relative aspect-video bg-secondary/50 rounded-xl overflow-hidden flex items-center justify-center">
-              {/* Camera View */}
-              {cameraActive && (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              )}
 
               {/* Captured Image */}
-              {capturedImage && !cameraActive && (
+              {capturedImage && (
                 <img
                   src={capturedImage}
                   alt="Captured"
@@ -245,7 +189,7 @@ export default function Dashboard() {
 
               {/* Scanning Animation */}
               {scanning && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+                <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10">
                   <div className="text-center space-y-4">
                     <div className="relative">
                       <div className="w-24 h-24 border-4 border-primary/30 rounded-full animate-ping absolute inset-0" />
@@ -258,58 +202,43 @@ export default function Dashboard() {
                 </div>
               )}
 
-
-
               {/* Placeholder */}
-              {!cameraActive && !capturedImage && !scanning && (
+              {!capturedImage && !scanning && (
                 <div className="text-center space-y-4 text-muted-foreground">
                   <div className="w-20 h-20 mx-auto rounded-full bg-secondary flex items-center justify-center">
                     <Camera className="h-10 w-10" />
                   </div>
-                  <p>Start camera or upload an image to scan</p>
+                  <p>Upload a photo to start scanning</p>
                 </div>
               )}
-
-              {/* Hidden canvas for capture */}
-              <canvas ref={canvasRef} className="hidden" />
             </div>
           </CardContent>
         </Card>
 
         {/* Controls */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-slide-up" style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}>
+        <div className="grid grid-cols-2 gap-4 animate-slide-up" style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}>
           <Button
-            variant={cameraActive ? 'destructive' : 'outline'}
+            variant="outline"
             size="lg"
-            onClick={cameraActive ? stopCamera : startCamera}
+            onClick={() => nativeInputRef.current?.click()}
             disabled={scanning}
             className="flex-col h-auto py-4 gap-2"
           >
             <Camera className="h-6 w-6" />
-            <span>{cameraActive ? 'Stop Camera' : 'Start Camera'}</span>
-          </Button>
-
-          <Button
-            variant="glow"
-            size="lg"
-            onClick={captureImage}
-            disabled={!cameraActive || scanning}
-            className="flex-col h-auto py-4 gap-2"
-          >
-            <Scan className="h-6 w-6" />
-            <span>Capture</span>
+            <span>Take Photo</span>
           </Button>
 
           <Button
             variant="outline"
             size="lg"
             onClick={() => fileInputRef.current?.click()}
-            disabled={cameraActive || scanning}
+            disabled={scanning}
             className="flex-col h-auto py-4 gap-2"
           >
             <Upload className="h-6 w-6" />
             <span>Upload</span>
           </Button>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -317,38 +246,62 @@ export default function Dashboard() {
             onChange={handleFileUpload}
             className="hidden"
           />
+          <input
+            ref={nativeInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
 
-          {capturedImage && !scanResult ? (
-            <Button
-              variant="glow"
-              size="lg"
-              onClick={performScan}
-              disabled={scanning}
-              className="flex-col h-auto py-4 gap-2"
-            >
-              {scanning ? (
-                <>
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                  <span>Scanning...</span>
-                </>
-              ) : (
-                <>
-                  <Scan className="h-6 w-6" />
-                  <span>Scan Now</span>
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={resetScan}
-              disabled={scanning}
-              className="flex-col h-auto py-4 gap-2"
-            >
-              <RotateCcw className="h-6 w-6" />
-              <span>Reset</span>
-            </Button>
+          {capturedImage && !scanResult && (
+            <div className="col-span-2 flex gap-4">
+              <Button
+                variant="glow"
+                size="lg"
+                onClick={performScan}
+                disabled={scanning}
+                className="flex-1 flex-col h-auto py-4 gap-2"
+              >
+                {scanning ? (
+                  <>
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span>Scanning...</span>
+                  </>
+                ) : (
+                  <>
+                    <Scan className="h-6 w-6" />
+                    <span>Scan Now</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={resetScan}
+                disabled={scanning}
+                className="flex-col h-auto py-4 gap-2"
+              >
+                <RotateCcw className="h-6 w-6" />
+                <span>Reset</span>
+              </Button>
+            </div>
+          )}
+
+          {capturedImage && scanResult && (
+            <div className="col-span-2">
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={resetScan}
+                disabled={scanning}
+                className="w-full flex-col h-auto py-4 gap-2"
+              >
+                <RotateCcw className="h-6 w-6" />
+                <span>Scan Another</span>
+              </Button>
+            </div>
           )}
         </div>
 
