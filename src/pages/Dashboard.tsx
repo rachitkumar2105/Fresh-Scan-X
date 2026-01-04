@@ -166,7 +166,7 @@ export default function Dashboard() {
         <div className="text-center space-y-2 animate-fade-in">
           <h1 className="text-3xl font-display font-bold flex items-center justify-center gap-3">
             <Leaf className="h-8 w-8 text-primary" />
-            Freshness Scanner
+            Fruit Freshness Scanner
           </h1>
           <p className="text-muted-foreground">
             Capture or upload an image to analyze produce freshness

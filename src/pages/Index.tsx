@@ -13,7 +13,7 @@ export default function Index() {
       <div className="absolute top-20 left-10 w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-pulse-slow" />
       <div className="absolute bottom-20 right-10 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '1.5s' }} />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
-      
+
       {/* Navigation */}
       <header className="relative z-10 p-6">
         <nav className="max-w-7xl mx-auto flex items-center justify-between">
@@ -26,7 +26,7 @@ export default function Index() {
               Fresh ScanX
             </span>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {user ? (
               <Button asChild variant="glow">
@@ -49,21 +49,18 @@ export default function Index() {
       {/* Hero Section */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-24">
         <div className="text-center space-y-8 animate-fade-in">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium">
-            <Zap className="h-4 w-4" />
-            AI-Powered Freshness Detection
-          </div>
-          
+
+
           <h1 className="text-5xl md:text-7xl font-display font-bold leading-tight">
-            <span className="text-foreground">Scan Your</span>
+            <span className="text-foreground">Scan your</span>
             <br />
             <span className="bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]">
-              Produce Freshness
+              Fruits Freshness
             </span>
           </h1>
-          
+
           <p className="max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground">
-            Instantly detect if your fruits and vegetables are fresh or rotten using advanced AI. 
+            Instantly detects if your fruits are fresh or rotten using advanced AI.
             Just snap a photo or upload an image to get started.
           </p>
 
