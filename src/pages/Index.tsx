@@ -60,7 +60,7 @@ export default function Index() {
           </h1>
 
           <p className="max-w-2xl mx-auto text-lg md:text-xl text-muted-foreground">
-            Instantly detects if your fruits are fresh or rotten using advanced AI.
+            Instantly detects if your fruits are fresh or rotten using freshness checker model.
             Just snap a photo or upload an image to get started.
           </p>
 

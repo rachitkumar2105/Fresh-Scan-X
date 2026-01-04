@@ -69,3 +69,15 @@ This service hosts the user interface.
 
 ## Part 3: Done!
 Visit your **Frontend URL** (provided by Render Static Site). Upload an image, and it will send it to your Backend service for analysis.
+
+## Troubleshooting
+
+### Page Not Found (404) on Refresh
+If you get a 404 error when refreshing pages like `/dashboard` or `/history`, it means Render is not handling client-side routing correctly.
+1.  Go to your **Render Dashboard** -> Select your **Frontend Service**.
+2.  Click on **Redirects/Rewrites**.
+3.  Add a new rule:
+    -   **Source**: `/*`
+    -   **Destination**: `/index.html`
+    -   **Action**: `Rewrite`
+4.  Save changes. This will force all requests to go to `index.html`, allowing React to handle the routing.
