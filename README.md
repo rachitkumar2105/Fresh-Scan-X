@@ -39,3 +39,6 @@
 
 ## Deployment
 You can deploy this project to any static site hosting service like Vercel, Netlify, or GitHub Pages.
+
+## Author
+~ by Rachit Kumar Singh
