@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
-import { useEffect } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -14,46 +14,75 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => {
-  // Wake up backend on load with retry
-  useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Backend Context
+interface BackendContextType {
+  isBackendReady: boolean;
+  checkBackendStatus: () => Promise<void>;
+}
 
-    const wakeUpBackend = async (retries = 3, delay = 2000) => {
-      // Show cold start message immediately if we are in a likely cold-start scenario or just always on first load check
-      // The user requested: "while loading the page for the first time... mention the message... backend services is starting"
-      // We'll set a timeout to show the toast if it takes more than 1 second to respond, to avoid annoying users with fast backends.
-      const toastTimer = setTimeout(() => {
-        toast.info("Backend services is starting", {
-          description: "It might take some time for the first time.",
-          duration: 5000,
-        });
-      }, 1500);
+const BackendContext = createContext<BackendContextType | undefined>(undefined);
+
+export const useBackend = () => {
+  const context = useContext(BackendContext);
+  if (!context) {
+    throw new Error("useBackend must be used within a BackendProvider");
+  }
+  return context;
+};
+
+const BackendProvider = ({ children }: { children: ReactNode }) => {
+  const [isBackendReady, setIsBackendReady] = useState(false);
+
+  const checkBackendStatus = async () => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+      console.log(`Checking backend status at ${apiUrl}...`);
+      const res = await fetch(`${apiUrl}/health`);
+      if (res.ok) {
+        setIsBackendReady(true);
+        console.log('Backend is ready!');
+      } else {
+        throw new Error('Backend not ready');
+      }
+    } catch (e) {
+      console.log('Backend check failed:', e);
+      setIsBackendReady(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial check
+    checkBackendStatus();
+
+    // Wake up backend mechanism
+    const wakeUpBackend = async (retries = 5, delay = 2000) => {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
       try {
-        if (import.meta.env.PROD && apiUrl.includes('localhost')) {
-          console.error('CRITICAL: Running in production but VITE_API_URL is set to localhost. Backend connection will likely fail.');
-        }
-        console.log(`Pinging backend at ${apiUrl}...`);
         const res = await fetch(`${apiUrl}/`);
-        clearTimeout(toastTimer); // Cancel toast if backend responds quickly
         if (res.ok) {
-          console.log('Backend is awake and ready!');
+          setIsBackendReady(true);
+          toast.success("Service Ready", {
+            description: "Backend services are now active.",
+          });
         } else {
-          throw new Error('Backend responded with error');
+          throw new Error('Backend error');
         }
       } catch (e) {
-        // If it failed, the toast might have already shown or will show.
-        // If we are retrying, we might want to keep showing it?
-        // The previous logic just retries silently.
-        // We let the toast stay if it appeared.
-        console.warn(`Backend wake-up attempt failed. Retries left: ${retries}`);
         if (retries > 0) {
+          // If it's the first retry (meaning 2nd attempt total), tell the user we are waiting
+          if (retries === 4) {
+            toast.info("Starting Services...", {
+              description: "The backend is waking up. This might take a minute on the first run.",
+              duration: 5000,
+            });
+          }
+          console.log(`Backend wake-up retry... (${retries} left)`);
           setTimeout(() => wakeUpBackend(retries - 1, delay * 1.5), delay);
         } else {
-          console.error('Backend failed to wake up after multiple attempts.');
-          toast.error("Backend unavailable", {
-            description: "Please check your connection and try again."
+          toast.error("Service Unavailable", {
+            description: "Could not connect to the backend. scans might fail.",
+            duration: 8000,
           });
         }
       }
@@ -63,23 +92,33 @@ const App = () => {
   }, []);
 
   return (
+    <BackendContext.Provider value={{ isBackendReady, checkBackendStatus }}>
+      {children}
+    </BackendContext.Provider>
+  );
+}
+
+const App = () => {
+  return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/history" element={<History />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
+      <BackendProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/history" element={<History />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </BackendProvider>
     </QueryClientProvider>
   );
 };

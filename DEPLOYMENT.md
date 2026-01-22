@@ -1,83 +1,74 @@
-# Deployment Guide: Render Only (Manual Setup)`
+# Deployment Guide
 
-This guide explains how to deploy both the **Backend** and **Frontend** entirely on Render, without using Blueprints.
-
-## Prerequisites
-- A [Render.com](https://render.com) account.
-- This repository pushed to your GitHub.
+This guide covers how to deploy:
+1.  **Backend**: Hugging Face Spaces (Docker)
+2.  **Frontend**: Vercel
 
 ---
 
-## Part 1: Deploy the Backend (Python)
-This service runs the AI model.
+## 1. Backend Deployment (Hugging Face Spaces)
 
-1.  **Create Service**:
-    -   Go to your Render Dashboard.
-    -   Click **New +** and select **Web Service**.
-2.  **Connect Repo**:
-    -   Find your **Fresh-Scan-X** repository and click **Connect**.
-3.  **Configure Settings**:
-    -   **Name**: `freshscanx-backend` (or similar)
-    -   **Region**: (Choose closest to you)
-    -   **Runtime**: `Python 3`
-    -   **Build Command**: `pip install -r backend/requirements.txt`
-    -   **Start Command**: `python -m uvicorn backend.main:app --host 0.0.0.0 --port 10000`
-    -   **Instance Type**: `Free`
-4.  **Environment Variables** (Optional but recommended):
-    -   Key: `PYTHON_VERSION`
-    -   Value: `3.10.0`
-5.  **Deploy**:
-    -   Click **Create Web Service**.
-    -   Wait for the deployment to finish (Green "Live" badge).
-6.  **Copy URL**:
-    -   Copy the service URL from the dashboard (e.g., `https://freshscanx-backend.onrender.com`).
-    -   **Save this URL**, you need it for the frontend!
+We use **Hugging Face Spaces** because it offers **16GB RAM free**, resolving memory issues.
 
----
+1.  **Create Space**:
+    *   Go to [Hugging Face Spaces](https://huggingface.co/spaces).
+    *   Click **Create new Space**.
+    *   **Name**: `freshscanx-backend`
+    *   **License**: `MIT`
+    *   **SDK**: Select **Docker** -> **Blank**.
+    *   Click **Create Space**.
 
-## Part 2: Deploy the Frontend (React/Vite)
-This service hosts the user interface.
+2.  **Upload Files**:
+    *   Navigate to the **Files** tab in your new Space.
+    *   Click **Add file** -> **Upload files**.
+    *   **Drag and drop** these two items from your computer:
+        1.  The `backend` folder.
+        2.  The `Dockerfile`.
+    *   *Note: The model is inside the backend folder, so it uploads automatically.*
+    *   Click **Commit changes**.
 
-1.  **Create Service**:
-    -   Go to your Render Dashboard.
-    -   Click **New +** and select **Static Site**.
-2.  **Connect Repo**:
-    -   Select the same **Fresh-Scan-X** repository.
-3.  **Configure Settings**:
-    -   **Name**: `freshscanx-frontend`
-    -   **Runtime**: `Node` (default)
-    -   **Build Command**: `npm install && npm run build`
-    -   **Publish Directory**: `dist`
-    -   **Instance Type**: `Free`
-4.  **Environment Variables (CRITICAL)**:
-    -   You MUST set this so the frontend knows where the backend is.
-    -   Key: `VITE_API_URL`
-    -   Value: `[PASTE_YOUR_BACKEND_URL_HERE]` (e.g., `https://freshscanx-backend.onrender.com`)
-    -   *Note: Ensure there is **no trailing slash** at the end of the URL.*
+3.  **Wait for Build**:
+    *   The Space will build (Status: **Building** -> **Running**).
+    *   This takes ~2-5 minutes.
 
-    **Supabase Configuration (Required for Auth/History):**
-    -   Key: `VITE_SUPABASE_URL`
-    -   Value: `[YOUR_SUPABASE_URL]`
-    -   Key: `VITE_SUPABASE_PUBLISHABLE_KEY`
-    -   Value: `[YOUR_SUPABASE_ANON_KEY]`
-    -   *(You can find these in your local `.env` file or Supabase Dashboard)*
-5.  **Deploy**:
-    -   Click **Create Static Site**.
-    -   Wait for the deployment to finish.
+4.  **Get Backend URL**:
+    *   Once running, click the **Embed this space** button (top right).
+    *   Copy the **Direct URL**.
+    *   Example: `https://yourname-freshscanx-backend.hf.space`
+    *   **Keep this URL safe**; you need it for the frontend.
 
 ---
 
-## Part 3: Done!
-Visit your **Frontend URL** (provided by Render Static Site). Upload an image, and it will send it to your Backend service for analysis.
+## 2. Frontend Deployment (Vercel)
+
+We use **Vercel** for the React frontend.
+
+1.  **Create Project**:
+    *   Go to [Vercel New Project](https://vercel.com/new).
+    *   Import your GitHub repository.
+
+2.  **Configure Build**:
+    *   **Framework Preset**: `Vite`    (Should auto-detect).
+    *   **Root Directory**: `.`         (Default).
+    *   **Build Command**: `npm run build` (Default).
+    *   **Output Directory**: `dist`    (Default).
+
+3.  **Environment Variables**:
+    *   Expand **Environment Variables**.
+    *   Key: `VITE_API_URL`
+    *   Value: **Paste your Hugging Face Backend URL here** (from Step 1.4).
+        *   *No trailing slash* (e.g., `https://yourname-freshscanx-backend.hf.space`).
+
+4.  **Deploy**:
+    *   Click **Deploy**.
+    *   Wait for the celebration confetti! 🎉
+
+---
 
 ## Troubleshooting
 
-### Page Not Found (404) on Refresh
-If you get a 404 error when refreshing pages like `/dashboard` or `/history`, it means Render is not handling client-side routing correctly.
-1.  Go to your **Render Dashboard** -> Select your **Frontend Service**.
-2.  Click on **Redirects/Rewrites**.
-3.  Add a new rule:
-    -   **Source**: `/*`
-    -   **Destination**: `/index.html`
-    -   **Action**: `Rewrite`
-4.  Save changes. This will force all requests to go to `index.html`, allowing React to handle the routing.
+-   **Backend**: If the Space status is `Runtime Error`, check the **Logs** tab in Hugging Face.
+-   **Frontend**: If the app loads but scans fail:
+    1.  Open your browser console (F12).
+    2.  Check for "Network Error" or "404".
+    3.  Verify that your `VITE_API_URL` variable in Vercel matches your running Backend URL.

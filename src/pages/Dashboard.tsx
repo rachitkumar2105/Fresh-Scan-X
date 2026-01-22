@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
+import { useBackend } from '@/App';
 import {
   Camera,
   Upload,
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const nativeInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { isBackendReady } = useBackend();
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -73,6 +75,15 @@ export default function Dashboard() {
       formData.append('file', blob, 'scan.jpg');
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+      // Check if backend is actually reachable before sending the payload
+      try {
+        const healthCheck = await fetch(`${apiUrl}/health`);
+        if (!healthCheck.ok) throw new Error("Backend not healthy");
+      } catch (err) {
+        throw new Error("Backend connection failed. Please wait a moment for services to start.");
+      }
+
       const response = await fetch(`${apiUrl}/predict`, {
         method: 'POST',
         body: formData,
@@ -104,12 +115,12 @@ export default function Dashboard() {
         console.error('Failed to save scan:', error);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Scan failed:", error);
       toast({
         variant: 'destructive',
         title: 'Scan Failed',
-        description: 'Could not connect to analysis server. Is the backend running?',
+        description: error.message || 'Could not connect to analysis server. Is the backend running?',
       });
       setScanResult(null);
     } finally {
@@ -172,6 +183,13 @@ export default function Dashboard() {
             Capture or upload an image to analyze produce freshness
           </p>
         </div>
+
+        {/* Backend Status Indicator */}
+        {!isBackendReady && (
+          <div className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 px-4 py-2 rounded-lg text-center text-sm font-medium animate-pulse">
+            Connecting to AI Analysis Engine... Please wait a moment.
+          </div>
+        )}
 
         {/* Scan Area */}
         <Card variant="glass" className="animate-scale-in overflow-hidden">
@@ -261,7 +279,7 @@ export default function Dashboard() {
                 variant="glow"
                 size="lg"
                 onClick={performScan}
-                disabled={scanning}
+                disabled={scanning || !isBackendReady}
                 className="flex-1 flex-col h-auto py-4 gap-2"
               >
                 {scanning ? (

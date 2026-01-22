@@ -1,8 +1,7 @@
 fastapi
 uvicorn
 python-multipart
+# CPU-only torch to save memory on Render (512MB limit)
 torch --index-url https://download.pytorch.org/whl/cpu
 torchvision --index-url https://download.pytorch.org/whl/cpu
 pillow
-numpy
-opencv-python-headless
