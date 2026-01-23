@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { checkSupabaseConfig } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +18,6 @@ export default function Auth() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const supabaseConfig = checkSupabaseConfig();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,13 +172,7 @@ export default function Auth() {
         </CardContent>
       </Card>
 
-      {/* Debug Info */}
-      <div className="absolute bottom-4 text-xs text-muted-foreground text-center w-full z-20">
-        <p>Debug Config:</p>
-        <p>URL: {supabaseConfig.url.substring(0, 15)}...</p>
-        <p>Key Set: {supabaseConfig.hasKey ? 'Yes' : 'No'}</p>
-        <p>Is Placeholder: {supabaseConfig.isPlaceholder ? 'YES (Error)' : 'No'}</p>
-      </div>
+
     </div>
   );
 }
