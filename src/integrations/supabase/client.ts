@@ -8,6 +8,15 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY |
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+const isPlaceholder = SUPABASE_URL === "https://placeholder.supabase.co" || SUPABASE_PUBLISHABLE_KEY === "placeholder-key";
+
+if (isPlaceholder) {
+    console.warn(
+        "supbase-client: Using placeholder Supabase credentials. Authentication will fail. " +
+        "Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are set in your environment variables."
+    );
+}
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
         storage: localStorage,
