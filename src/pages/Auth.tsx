@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { checkSupabaseConfig } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,7 @@ export default function Auth() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const supabaseConfig = checkSupabaseConfig();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +70,7 @@ export default function Auth() {
       <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/5" />
       <div className="absolute top-1/4 -left-20 w-80 h-80 bg-primary/10 rounded-full blur-3xl animate-pulse-slow" />
       <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-accent/10 rounded-full blur-3xl animate-pulse-slow" style={{ animationDelay: '1s' }} />
-      
+
       <Card variant="glass" className="w-full max-w-md relative z-10 animate-scale-in">
         <CardHeader className="text-center space-y-4">
           <Link to="/" className="flex items-center justify-center gap-2 group">
@@ -89,7 +91,7 @@ export default function Auth() {
               : 'Join Fresh ScanX to start scanning'}
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
@@ -104,7 +106,7 @@ export default function Auth() {
                 />
               </div>
             )}
-            
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -116,7 +118,7 @@ export default function Auth() {
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -171,6 +173,14 @@ export default function Auth() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Debug Info */}
+      <div className="absolute bottom-4 text-xs text-muted-foreground text-center w-full z-20">
+        <p>Debug Config:</p>
+        <p>URL: {supabaseConfig.url.substring(0, 15)}...</p>
+        <p>Key Set: {supabaseConfig.hasKey ? 'Yes' : 'No'}</p>
+        <p>Is Placeholder: {supabaseConfig.isPlaceholder ? 'YES (Error)' : 'No'}</p>
+      </div>
     </div>
   );
 }

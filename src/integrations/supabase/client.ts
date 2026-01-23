@@ -17,6 +17,15 @@ if (isPlaceholder) {
     );
 }
 
+export const checkSupabaseConfig = () => {
+    return {
+        isPlaceholder,
+        url: SUPABASE_URL,
+        hasKey: SUPABASE_PUBLISHABLE_KEY !== "placeholder-key" && SUPABASE_PUBLISHABLE_KEY.length > 0
+    }
+};
+
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
         storage: localStorage,
