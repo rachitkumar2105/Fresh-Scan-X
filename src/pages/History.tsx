@@ -50,12 +50,13 @@ export default function History() {
         ...scan,
         result: scan.result as 'fresh' | 'rotten' | 'unknown'
       })));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load scan history. Check console for details.';
       console.error('Failed to fetch scans:', error);
       toast({
         variant: 'destructive',
         title: 'History Error',
-        description: error.message || 'Failed to load scan history. Check console for details.',
+        description: errorMessage,
       });
     } finally {
       setLoading(false);

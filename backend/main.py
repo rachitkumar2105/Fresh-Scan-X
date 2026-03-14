@@ -64,17 +64,9 @@ async def predict(file: UploadFile = File(...)):
             
         best_result = results[0]
         
-        # To maintain some compatibility but also fulfill the strict output format
-        response = {
-            "Fruit": best_result['Fruit'],
-            "Freshness": best_result['Freshness'],
-            "Confidence": best_result['Confidence'],
-            "Feedback": best_result['Feedback'],
-            # Including the full list for multiple fruit detection support
-            "all_results": results
-        }
-        
-        return response
+        # We return the best result matching the exact schema required 
+        # (dynamically either Fruit/Freshness/Conf/Feedback OR just Conf/Feedback)
+        return best_result
             
     except Exception as e:
         print(e)

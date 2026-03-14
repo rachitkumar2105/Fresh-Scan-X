@@ -2,9 +2,9 @@ def generate_feedback(fruit_name, freshness):
     # Handle the unknown fruit scenario where confidence was too low
     if not fruit_name:
         if freshness == "Fresh":
-            return "The scanned item appears fresh with no clear signs of spoilage."
+            return "The scanned item appears fresh with no visible signs of spoilage."
         else:
-            return "The scanned item shows signs of spoilage and deterioration."
+            return "The item shows visible discoloration indicating possible spoilage."
 
     # Format fruit name for nice grammar
     fruit_name = fruit_name.lower()
@@ -14,6 +14,6 @@ def generate_feedback(fruit_name, freshness):
     # For rotten fruits: mention discoloration, surface damage, spoilage indicators.
     
     if freshness == "Fresh":
-        return f"The {fruit_name} appears fresh with a healthy color and intact surface. No visible spoilage or discoloration was detected."
+        return f"The fruit appears fresh with healthy color and no visible signs of spoilage."
     else:
-        return f"The {fruit_name} shows dark patches and signs of deterioration. Visible spoilage suggests the fruit is no longer fresh."
+        return f"The fruit shows visible discoloration and signs of spoilage."

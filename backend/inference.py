@@ -123,21 +123,24 @@ class FruitInference:
                 conf_percent = f"{int(round(pred['confidence'] * 100))}%"
                 feedback = generate_feedback(pred['fruit'], pred['freshness'])
                 
-                res = {
-                    'Fruit': pred['fruit'],
-                    'Freshness': pred['freshness'],
-                    'Confidence': conf_percent,
-                    'Feedback': feedback
-                }
+                if pred['fruit'] is not None:
+                    res = {
+                        'Fruit': pred['fruit'],
+                        'Freshness': pred['freshness'],
+                        'Confidence': conf_percent,
+                        'Feedback': feedback
+                    }
+                else:
+                    res = {
+                        'Confidence': conf_percent,
+                        'Feedback': feedback
+                    }
                 final_results.append(res)
                 
         # To avoid clutter, if we detected confident known fruits,
         # we might want to filter out low-confidence unknowns. 
         # But if we ONLY have unknown fruits, we return the best one.
-        known_fruits = [r for r in final_results if r['Fruit'] is not None]
-        
-        if known_fruits:
-            return known_fruits
+        known_fruits = [r for r in final_results if 'Fruit' in r]
             
         # If no known fruits passed the threshold, return the best unknown prediction
         return [final_results[0]] if final_results else []

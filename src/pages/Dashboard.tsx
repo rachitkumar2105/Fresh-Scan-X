@@ -115,12 +115,13 @@ export default function Dashboard() {
         console.error('Failed to save scan:', error);
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Could not connect to analysis server. Is the backend running?';
       console.error("Scan failed:", error);
       toast({
         variant: 'destructive',
         title: 'Scan Failed',
-        description: error.message || 'Could not connect to analysis server. Is the backend running?',
+        description: errorMessage,
       });
       setScanResult(null);
     } finally {
