@@ -7,6 +7,10 @@ from PIL import Image
 from pydantic import BaseModel
 
 from .inference import FruitInference
+from dotenv import load_dotenv
+
+# Explicitly load .env from project root
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 app = FastAPI(title="FreshScanX Industry API")
 
@@ -39,7 +43,10 @@ async def load_model():
 
 @app.get("/")
 def home():
-    return {"message": "FreshScanX Industry AI API is running"}
+    return {
+        "message": "FreshScanX Industry AI API is running",
+        "llm_active": inference_system.groq_client is not None if inference_system else False
+    }
 
 @app.get("/health")
 def health():

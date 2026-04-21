@@ -137,9 +137,13 @@ export default function History() {
       });
 
       const data = await response.json();
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.explanation || "I'm sorry, I couldn't process that." }]);
+      if (response.ok) {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: data.explanation || "No explanation received." }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.detail || data.explanation || "Server failed to process request."}` }]);
+      }
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Chat Error', description: 'Could not connect to AI engine.' });
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Network Error: Could not connect to AI engine at ${import.meta.env.VITE_API_URL || '127.0.0.1:8000'}` }]);
     } finally {
       setIsTyping(false);
     }
