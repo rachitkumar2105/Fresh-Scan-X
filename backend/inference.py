@@ -99,30 +99,46 @@ class FruitInference:
         # System Guardrails
         system_rules = """
         You are the FreshScanX AI Assistant. 
-        CRITICAL RULES:
-        1. You ONLY answer questions related to food freshness, safety, recipes, and precautions for the scanned item.
-        2. If a user asks anything unrelated (e.g., time, weather, general knowledge, or random chat), POLITELY REPLY: 
-           "I am only built for suggestions, help, and queries related to food analysis and safety precautions. I cannot answer unrelated questions."
-        3. Be professional, concise, and helpful.
+        TASK: Analyze food freshness or answer user questions about food safety.
+        
+        GUARDRAILS:
+        - You ONLY answer questions related to food freshness, safety, recipes, and precautions for the item mentioned.
+        - If the user asks something UNRELATED (e.g., general knowledge, time, cooking unrelated things like tea/biryani, or random chat), you MUST reply EXACTLY with:
+          "I am only built for suggestions, help, and queries related to food analysis and safety precautions. I cannot answer unrelated questions."
+        - If the question is RELATED, provide a professional and concise answer.
         """
 
-        prompt = custom_prompt if custom_prompt else f"""
-        Analyze this food image. 
-        1. Identify the primary fruit/vegetable.
-        2. Give a detailed explanation of its freshness state (currently detected as {fruit_hint or 'unknown'}).
-        3. Provide safety recommendations.
-        4. Suggest a consumption window.
-        """
+        # Decide if we use Vision or Text based on the context
+        is_placeholder_image = len(base64_image) < 200 # Very small base64 is likely the dummy pixel
         
-        full_prompt = f"{system_rules}\n\nUser Question: {prompt}"
+        user_query = custom_prompt if custom_prompt else f"Analyze this image of {fruit_hint or 'food'}."
         
+        if is_placeholder_image and custom_prompt:
+            # Text-only path for History Chat
+            try:
+                chat_completion = self.groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_rules},
+                        {"role": "user", "content": f"Context: Scanned {fruit_hint or 'item'} was detected as {fruit_hint or 'unknown'}. Question: {user_query}"}
+                    ],
+                    model="llama-3.3-70b-versatile",
+                )
+                return chat_completion.choices[0].message.content
+            except Exception as e:
+                return f"Text Analysis Error: {str(e)}"
+        
+        # Vision path for Dashboard Scan
         try:
             chat_completion = self.groq_client.chat.completions.create(
                 messages=[
                     {
+                        "role": "system",
+                        "content": system_rules
+                    },
+                    {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": full_prompt},
+                            {"type": "text", "text": user_query},
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -136,14 +152,15 @@ class FruitInference:
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
-            # Fallback to text-only if vision fails
+            # Fallback to text-only
             try:
                 chat_completion = self.groq_client.chat.completions.create(
                     messages=[
-                        {"role": "user", "content": f"I have a fruit that was detected as {fruit_hint or 'unknown'}. Give me safety tips and storage advice."}
+                        {"role": "system", "content": system_rules},
+                        {"role": "user", "content": f"Context: Image analysis failed or unavailable. Scanned item was {fruit_hint or 'unknown'}. Question: {user_query}"}
                     ],
                     model="llama-3.3-70b-versatile",
                 )
                 return chat_completion.choices[0].message.content
             except Exception as e2:
-                return f"GROQ Analysis Error: {str(e2)}"
+                return f"Analysis Error: {str(e2)}"
