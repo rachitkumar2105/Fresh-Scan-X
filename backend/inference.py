@@ -96,6 +96,16 @@ class FruitInference:
 
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         
+        # System Guardrails
+        system_rules = """
+        You are the FreshScanX AI Assistant. 
+        CRITICAL RULES:
+        1. You ONLY answer questions related to food freshness, safety, recipes, and precautions for the scanned item.
+        2. If a user asks anything unrelated (e.g., time, weather, general knowledge, or random chat), POLITELY REPLY: 
+           "I am only built for suggestions, help, and queries related to food analysis and safety precautions. I cannot answer unrelated questions."
+        3. Be professional, concise, and helpful.
+        """
+
         prompt = custom_prompt if custom_prompt else f"""
         Analyze this food image. 
         1. Identify the primary fruit/vegetable.
@@ -104,13 +114,15 @@ class FruitInference:
         4. Suggest a consumption window.
         """
         
+        full_prompt = f"{system_rules}\n\nUser Question: {prompt}"
+        
         try:
             chat_completion = self.groq_client.chat.completions.create(
                 messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": prompt},
+                            {"type": "text", "text": full_prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {

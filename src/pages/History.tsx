@@ -19,7 +19,13 @@ import {
   ArrowDownRight,
   Zap,
   TrendingDown,
-  Scale
+  Scale,
+  MessageSquare,
+  X,
+  Send,
+  Loader2,
+  Bot,
+  Brain
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -34,12 +40,23 @@ type Scan = {
   metadata?: any;
 };
 
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 export default function History() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Chat State
+  const [activeChatScan, setActiveChatScan] = useState<Scan | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -87,6 +104,47 @@ export default function History() {
     }
   };
 
+  const startChat = (scan: Scan) => {
+    setActiveChatScan(scan);
+    setChatMessages([
+      { role: 'assistant', content: `Hello! I'm here to help with your ${scan.fruit_type} analysis. You found it was ${scan.result} with ${scan.confidence.toFixed(1)}% confidence. What would you like to know?` }
+    ]);
+  };
+
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || !activeChatScan) return;
+
+    const userMsg = inputMessage.trim();
+    setInputMessage('');
+    setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setIsTyping(true);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      
+      // Since we don't have the original image in history, we send metadata
+      const formData = new FormData();
+      formData.append('fruit', activeChatScan.fruit_type);
+      formData.append('freshness', activeChatScan.result);
+      formData.append('status', activeChatScan.result === 'fresh' ? 'Safe' : 'Unsafe');
+      formData.append('custom_prompt', userMsg);
+      // Send a dummy/empty image since the backend expects one but we are in history mode
+      formData.append('image_data', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+      const response = await fetch(`${apiUrl}/explain`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.explanation || "I'm sorry, I couldn't process that." }]);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Chat Error', description: 'Could not connect to AI engine.' });
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
   const filteredScans = scans.filter(scan => 
     scan.fruit_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
     scan.result.toLowerCase().includes(searchTerm.toLowerCase())
@@ -101,7 +159,7 @@ export default function History() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto space-y-8 pb-20">
+      <div className="max-w-6xl mx-auto space-y-8 pb-20 relative">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -111,7 +169,7 @@ export default function History() {
               Intelligence History
             </h1>
             <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">
-              Waste Analytics & Scan Logs
+              Waste Analytics & Smart AI Assistance
             </p>
           </div>
           
@@ -198,7 +256,7 @@ export default function History() {
                     <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Status</th>
                     <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Confidence</th>
                     <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Detected On</th>
-                    <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-muted-foreground">Action</th>
+                    <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
@@ -247,14 +305,24 @@ export default function History() {
                           {format(new Date(scan.created_at), 'MMM d, yyyy · h:mm a')}
                         </td>
                         <td className="p-4 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteScan(scan.id)}
-                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => startChat(scan)}
+                              className="text-primary hover:bg-primary/10 rounded-xl gap-2 text-[10px] font-bold uppercase"
+                            >
+                              <MessageSquare className="h-4 w-4" /> Chat
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteScan(scan.id)}
+                              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -264,6 +332,77 @@ export default function History() {
             </div>
           </CardContent>
         </Card>
+
+        {/* AI Chat Drawer / Modal */}
+        {activeChatScan && (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center p-4">
+            <Card className="w-full max-w-lg h-[80vh] md:h-[600px] flex flex-col border-2 border-primary/20 shadow-2xl rounded-3xl animate-slide-up">
+              <CardHeader className="p-4 border-b border-border/50 flex flex-row items-center justify-between bg-primary/5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-xl">
+                    <Brain className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-black uppercase tracking-widest">{activeChatScan.fruit_type} Analysis</CardTitle>
+                    <CardDescription className="text-[10px] uppercase font-bold">Smart Assistant</CardDescription>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setActiveChatScan(null)} className="rounded-full h-8 w-8 p-0">
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              
+              <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/5">
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={cn(
+                    "flex gap-3 max-w-[85%]",
+                    msg.role === 'user' ? "ml-auto flex-row-reverse" : ""
+                  )}>
+                    <div className={cn(
+                      "p-2 rounded-lg shrink-0 h-8 w-8 flex items-center justify-center",
+                      msg.role === 'user' ? "bg-primary text-primary-foreground" : "bg-secondary text-primary"
+                    )}>
+                      {msg.role === 'user' ? <Zap className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                    </div>
+                    <div className={cn(
+                      "p-3 rounded-2xl text-sm leading-relaxed",
+                      msg.role === 'user' ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-card border border-border/50 rounded-tl-none shadow-sm"
+                    )}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                {isTyping && (
+                  <div className="flex gap-3">
+                    <div className="p-2 rounded-lg bg-secondary text-primary shrink-0 h-8 w-8 flex items-center justify-center">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                    <div className="bg-card border border-border/50 p-3 rounded-2xl rounded-tl-none italic text-muted-foreground text-xs">
+                      Assistant is typing...
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+
+              <div className="p-4 border-t border-border/50 bg-background">
+                <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
+                  <input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    placeholder="Ask about freshness, recipes, or safety..."
+                    className="flex-1 px-4 py-2 bg-secondary/50 border border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                  />
+                  <Button type="submit" disabled={!inputMessage.trim() || isTyping} variant="glow" size="icon" className="rounded-xl h-10 w-10">
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </form>
+                <p className="text-[8px] text-center mt-3 text-muted-foreground font-bold uppercase tracking-widest">
+                  Powered by FreshScanX Groq Intelligence
+                </p>
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
