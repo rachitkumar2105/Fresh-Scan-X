@@ -1,36 +1,45 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import DashboardLayout from '@/components/DashboardLayout';
-import {
-  History as HistoryIcon,
-  CheckCircle,
-  XCircle,
+import { 
+  History as HistoryIcon, 
+  Search, 
+  Trash2, 
+  Calendar, 
+  Tag, 
+  CheckCircle, 
+  XCircle, 
   AlertCircle,
-  Trash2,
-  Calendar,
-  Loader2,
-  Leaf
+  BarChart3,
+  PieChart,
+  ArrowUpRight,
+  ArrowDownRight,
+  Zap,
+  TrendingDown,
+  Scale
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 type Scan = {
   id: string;
-  result: 'fresh' | 'rotten' | 'unknown';
-  confidence: number | null;
-  fruit_type: string | null;
   created_at: string;
+  result: 'fresh' | 'rotten';
+  confidence: number;
+  fruit_type: string;
+  metadata?: any;
 };
 
 export default function History() {
-  const [scans, setScans] = useState<Scan[]>([]);
-  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -43,21 +52,13 @@ export default function History() {
       const { data, error } = await supabase
         .from('scans')
         .select('*')
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setScans((data || []).map(scan => ({
-        ...scan,
-        result: scan.result as 'fresh' | 'rotten' | 'unknown'
-      })));
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load scan history. Check console for details.';
-      console.error('Failed to fetch scans:', error);
-      toast({
-        variant: 'destructive',
-        title: 'History Error',
-        description: errorMessage,
-      });
+      setScans(data || []);
+    } catch (error) {
+      console.error('Failed to fetch history:', error);
     } finally {
       setLoading(false);
     }
@@ -71,142 +72,196 @@ export default function History() {
         .eq('id', id);
 
       if (error) throw error;
+      
       setScans(scans.filter(scan => scan.id !== id));
       toast({
-        title: 'Deleted',
-        description: 'Scan removed from history.',
+        title: 'Scan deleted',
+        description: 'The scan record has been removed.',
       });
     } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to delete scan.',
+        description: 'Failed to delete scan record.',
       });
     }
   };
 
-  const getResultIcon = (result: string) => {
-    switch (result) {
-      case 'fresh':
-        return <CheckCircle className="h-6 w-6 text-primary" />;
-      case 'rotten':
-        return <XCircle className="h-6 w-6 text-destructive" />;
-      default:
-        return <AlertCircle className="h-6 w-6 text-warning" />;
-    }
-  };
+  const filteredScans = scans.filter(scan => 
+    scan.fruit_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    scan.result.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const getResultStyles = (result: string) => {
-    switch (result) {
-      case 'fresh':
-        return 'border-primary/30 bg-primary/5';
-      case 'rotten':
-        return 'border-destructive/30 bg-destructive/5';
-      default:
-        return 'border-warning/30 bg-warning/5';
-    }
-  };
-
+  // Analytics Calculation
+  const totalScans = scans.length;
   const freshCount = scans.filter(s => s.result === 'fresh').length;
   const rottenCount = scans.filter(s => s.result === 'rotten').length;
+  const wastePercentage = totalScans > 0 ? (rottenCount / totalScans) * 100 : 0;
+  const avgConfidence = totalScans > 0 ? scans.reduce((acc, s) => acc + s.confidence, 0) / totalScans : 0;
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="text-center space-y-2 animate-fade-in">
-          <h1 className="text-3xl font-display font-bold flex items-center justify-center gap-3">
-            <HistoryIcon className="h-8 w-8 text-primary" />
-            Scan History
-          </h1>
-          <p className="text-muted-foreground">
-            View all your previous freshness scans
-          </p>
+      <div className="max-w-6xl mx-auto space-y-8 pb-20">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="space-y-1 text-center md:text-left">
+            <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight flex items-center justify-center md:justify-start gap-3 uppercase">
+              <HistoryIcon className="h-8 w-8 text-primary" />
+              Intelligence History
+            </h1>
+            <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">
+              Waste Analytics & Scan Logs
+            </p>
+          </div>
+          
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search history..."
+              className="w-full pl-10 pr-4 py-2 bg-secondary/50 border border-border/50 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-scale-in">
-          <Card variant="glass">
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-display font-bold text-foreground">{scans.length}</p>
-              <p className="text-sm text-muted-foreground">Total Scans</p>
+        {/* Waste Analytics Dashboard */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in">
+          <Card variant="glass" className="border-primary/10 overflow-hidden">
+            <CardContent className="p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Total Scans</p>
+                <div className="p-1.5 bg-primary/10 rounded-lg"><BarChart3 className="h-4 w-4 text-primary" /></div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-3xl font-black">{totalScans}</h3>
+                <p className="text-[9px] text-primary font-bold mt-1 uppercase flex items-center gap-1">
+                  <ArrowUpRight className="h-3 w-3" /> Industry Standard
+                </p>
+              </div>
             </CardContent>
           </Card>
-          <Card variant="glass" className="border-primary/20">
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-display font-bold text-primary">{freshCount}</p>
-              <p className="text-sm text-muted-foreground">Fresh</p>
+
+          <Card variant="glass" className="border-destructive/10 overflow-hidden">
+            <CardContent className="p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Waste Ratio</p>
+                <div className="p-1.5 bg-destructive/10 rounded-lg"><TrendingDown className="h-4 w-4 text-destructive" /></div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-3xl font-black">{wastePercentage.toFixed(1)}%</h3>
+                <p className="text-[9px] text-destructive font-bold mt-1 uppercase flex items-center gap-1">
+                  {wastePercentage > 20 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />} 
+                  {wastePercentage > 20 ? 'Action Required' : 'Optimal Zone'}
+                </p>
+              </div>
             </CardContent>
           </Card>
-          <Card variant="glass" className="border-destructive/20">
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-display font-bold text-destructive">{rottenCount}</p>
-              <p className="text-sm text-muted-foreground">Rotten</p>
+
+          <Card variant="glass" className="border-warning/10 overflow-hidden">
+            <CardContent className="p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Confidence Avg</p>
+                <div className="p-1.5 bg-warning/10 rounded-lg"><Zap className="h-4 w-4 text-warning" /></div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-3xl font-black">{avgConfidence.toFixed(0)}%</h3>
+                <p className="text-[9px] text-warning font-bold mt-1 uppercase">Inference Quality</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card variant="glass" className="border-primary/10 overflow-hidden">
+            <CardContent className="p-4 flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Inventory</p>
+                <div className="p-1.5 bg-primary/10 rounded-lg"><Scale className="h-4 w-4 text-primary" /></div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-3xl font-black">{freshCount}</h3>
+                <p className="text-[9px] text-primary font-bold mt-1 uppercase">Items Fresh</p>
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* History List */}
-        <Card variant="default" className="animate-slide-up" style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-primary" />
-              Recent Scans
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : scans.length === 0 ? (
-              <div className="text-center py-12 space-y-4">
-                <div className="w-16 h-16 mx-auto rounded-full bg-secondary flex items-center justify-center">
-                  <Leaf className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <p className="text-muted-foreground">No scans yet. Start scanning to see your history!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {scans.map((scan, index) => (
-                  <div
-                    key={scan.id}
-                    className={cn(
-                      "flex items-center justify-between p-4 rounded-xl border transition-all duration-300 hover:shadow-lg animate-fade-in",
-                      getResultStyles(scan.result)
-                    )}
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex-shrink-0">
-                        {getResultIcon(scan.result)}
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          Fruit: {scan.fruit_type || 'Unknown Produce'}
-                        </p>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                          <span className="capitalize font-medium">
+        {/* History Table */}
+        <Card variant="glass" className="border-border/50 rounded-3xl overflow-hidden animate-slide-up">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-secondary/50 border-b border-border/50">
+                    <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Item</th>
+                    <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Status</th>
+                    <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Confidence</th>
+                    <th className="p-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Detected On</th>
+                    <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-muted-foreground">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="p-12 text-center text-muted-foreground font-bold animate-pulse uppercase tracking-widest text-xs">
+                        Loading Intelligence Logs...
+                      </td>
+                    </tr>
+                  ) : filteredScans.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-12 text-center text-muted-foreground font-bold uppercase tracking-widest text-xs">
+                        No scan history found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredScans.map((scan) => (
+                      <tr key={scan.id} className="group hover:bg-primary/5 transition-all">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-secondary rounded-lg font-bold text-sm uppercase tracking-tight">
+                              {scan.fruit_type}
+                            </div>
+                            {scan.metadata?.mode && (
+                              <span className="text-[8px] px-1.5 py-0.5 bg-muted rounded font-bold uppercase text-muted-foreground">
+                                {scan.metadata.mode}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className={cn(
+                            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+                            scan.result === 'fresh' 
+                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
+                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                          )}>
+                            {scan.result === 'fresh' ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                             {scan.result}
-                          </span>
-                          {scan.confidence && (
-                            <span>• {scan.confidence.toFixed(1)}% confidence</span>
-                          )}
-                          <span>• {format(new Date(scan.created_at), 'MMM d, yyyy h:mm a')}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteScan(scan.id)}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+                          </div>
+                        </td>
+                        <td className="p-4 font-bold text-sm">
+                          {scan.confidence.toFixed(1)}%
+                        </td>
+                        <td className="p-4 text-xs text-muted-foreground font-medium">
+                          {format(new Date(scan.created_at), 'MMM d, yyyy · h:mm a')}
+                        </td>
+                        <td className="p-4 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteScan(scan.id)}
+                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </div>

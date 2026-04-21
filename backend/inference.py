@@ -90,20 +90,18 @@ class FruitInference:
         
         return [result]
 
-    async def get_intelligent_analysis(self, image_bytes, fruit_hint=None):
+    async def get_intelligent_analysis(self, image_bytes, fruit_hint=None, custom_prompt=None):
         if not self.groq_client:
             return "Please configure GROQ_API_KEY for advanced analysis."
 
-        # Convert image to base64
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         
-        prompt = """
+        prompt = custom_prompt if custom_prompt else f"""
         Analyze this food image. 
         1. Identify the primary fruit/vegetable.
-        2. Give a detailed explanation of its freshness state.
-        3. Provide safety recommendations (Can I eat it? Can it be used in recipes?).
+        2. Give a detailed explanation of its freshness state (currently detected as {fruit_hint or 'unknown'}).
+        3. Provide safety recommendations.
         4. Suggest a consumption window.
-        Be professional and concise.
         """
         
         try:

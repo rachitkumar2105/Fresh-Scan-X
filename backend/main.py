@@ -76,7 +76,8 @@ async def explain(
     fruit: str = Form(None), 
     freshness: str = Form(None), 
     status: str = Form(None),
-    api_key: str = Form(None)
+    api_key: str = Form(None),
+    custom_prompt: str = Form(None)
 ):
     """
     LLM Explanation Endpoint
@@ -85,18 +86,15 @@ async def explain(
         raise HTTPException(status_code=500, detail="Inference system not loaded")
     
     try:
-        # If API key is provided from frontend, use it. Otherwise use env key.
         if api_key:
             inference_system.update_llm_config(api_key)
             
-        # Decode base64 image
-        # For now, we assume image_data is the raw bytes in base64
         if "," in image_data:
             image_data = image_data.split(",")[1]
             
         image_bytes = base64.b64decode(image_data)
         
-        analysis = await inference_system.get_intelligent_analysis(image_bytes)
+        analysis = await inference_system.get_intelligent_analysis(image_bytes, fruit_hint=fruit, custom_prompt=custom_prompt)
         return {"explanation": analysis}
             
     except Exception as e:

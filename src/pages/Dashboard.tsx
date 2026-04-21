@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -22,7 +22,13 @@ import {
   Clock,
   MessageSquare,
   ChevronRight,
-  Info
+  Info,
+  Zap,
+  Settings,
+  History as HistoryIcon,
+  PieChart,
+  BarChart3,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -37,107 +43,148 @@ type ScanResult = {
   error?: string;
 };
 
+type IndustryMode = 'Household' | 'Retail' | 'Warehouse' | 'Agriculture';
+
 export default function Dashboard() {
+  // State
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [askingLLM, setAskingLLM] = useState(false);
+  const [isLive, setIsLive] = useState(false);
+  const [autoScan, setAutoScan] = useState(false);
+  const [industryMode, setIndustryMode] = useState<IndustryMode>('Household');
   
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const nativeInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const { isBackendReady } = useBackend();
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        toast({
-          variant: 'destructive',
-          title: 'Invalid File',
-          description: 'Please upload an image file.',
-        });
-        return;
+  // Camera Management
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setIsLive(true);
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCapturedImage(e.target?.result as string);
-        setScanResult(null);
-        setExplanation(null);
-      };
-      reader.readAsDataURL(file);
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Camera Error',
+        description: 'Could not access camera. Please check permissions.',
+      });
     }
   };
 
-  const performScan = async () => {
-    if (!capturedImage || !user) return;
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      setIsLive(false);
+    }
+  };
+
+  const captureFrame = useCallback(() => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.8);
+      }
+    }
+    return null;
+  }, []);
+
+  // Scan Logic
+  const performScan = async (imageToScan?: string) => {
+    const image = imageToScan || capturedImage;
+    if (!image || !user) return;
 
     setScanning(true);
     setExplanation(null);
 
     try {
-      let blob;
-      if (capturedImage.startsWith('data:')) {
-        const response = await fetch(capturedImage);
-        blob = await response.blob();
-      } else {
-        throw new Error("Invalid image data");
-      }
-
+      const response = await fetch(image);
+      const blob = await response.blob();
+      
       const formData = new FormData();
       formData.append('file', blob, 'scan.jpg');
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-      const response = await fetch(`${apiUrl}/predict`, {
+      const scanResponse = await fetch(`${apiUrl}/predict`, {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
-      }
-
-      const data = await response.json();
+      if (!scanResponse.ok) throw new Error("Server error");
+      const data = await scanResponse.json();
 
       if (data.error) {
-        toast({
-          variant: 'destructive',
-          title: 'Validation Error',
-          description: data.error,
-        });
-        setScanning(false);
-        return;
+        if (!autoScan) {
+          toast({ variant: 'destructive', title: 'Validation Error', description: data.error });
+        }
+        return null;
       }
 
       setScanResult(data);
-
-      try {
-        await supabase.from('scans').insert({
-          user_id: user.id,
-          result: data.freshness.toLowerCase(),
-          confidence: data.confidence,
-          fruit_type: data.fruit,
-        });
-      } catch (error) {
-        console.error('Failed to save scan:', error);
-      }
-
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Analysis failed.';
-      toast({
-        variant: 'destructive',
-        title: 'Scan Failed',
-        description: errorMessage,
+      if (isLive && !imageToScan) setCapturedImage(image);
+      
+      // Save to Supabase
+      await supabase.from('scans').insert({
+        user_id: user.id,
+        result: data.freshness.toLowerCase(),
+        confidence: data.confidence,
+        fruit_type: data.fruit,
+        metadata: { mode: industryMode }
       });
+
+      // Auto-stop live if we found something
+      if (isLive && !autoScan) stopCamera();
+      
+      return data;
+    } catch (error) {
+      if (!autoScan) {
+        toast({ variant: 'destructive', title: 'Scan Failed', description: 'Analysis failed.' });
+      }
     } finally {
       setScanning(false);
     }
   };
 
-  const getAIExplanation = async () => {
+  // Auto-detection loop
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLive && autoScan && !scanning) {
+      interval = setInterval(() => {
+        const frame = captureFrame();
+        if (frame) performScan(frame);
+      }, 3000); // Scan every 3 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isLive, autoScan, scanning, captureFrame]);
+
+  const handleManualCapture = () => {
+    const frame = captureFrame();
+    if (frame) {
+      setCapturedImage(frame);
+      stopCamera();
+      performScan(frame);
+    }
+  };
+
+  const getAIExplanation = async (customPrompt?: string) => {
     if (!capturedImage || !scanResult) return;
     
     setAskingLLM(true);
@@ -150,6 +197,7 @@ export default function Dashboard() {
       formData.append('fruit', scanResult.fruit);
       formData.append('freshness', scanResult.freshness);
       formData.append('status', scanResult.status);
+      if (customPrompt) formData.append('custom_prompt', customPrompt);
       if (apiKey) formData.append('api_key', apiKey);
 
       const response = await fetch(`${apiUrl}/explain`, {
@@ -160,12 +208,7 @@ export default function Dashboard() {
       const data = await response.json();
       setExplanation(data.explanation);
     } catch (err) {
-      console.error(err);
-      toast({
-        variant: 'destructive',
-        title: 'AI Analysis Failed',
-        description: 'Could not connect to LLM engine.',
-      });
+      toast({ variant: 'destructive', title: 'AI Failed', description: 'Check Groq Key.' });
     } finally {
       setAskingLLM(false);
     }
@@ -175,314 +218,247 @@ export default function Dashboard() {
     setCapturedImage(null);
     setScanResult(null);
     setExplanation(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (nativeInputRef.current) nativeInputRef.current.value = '';
+    setAutoScan(false);
+    stopCamera();
   };
 
-  const getStatusConfig = () => {
-    if (!scanResult) return null;
-    switch (scanResult.status) {
-      case 'Safe':
-        return { 
-          icon: <CheckCircle className="h-10 w-10 md:h-12 md:w-12 text-primary" />, 
-          color: 'text-primary border-primary/30 bg-primary/5',
-          glow: 'shadow-[0_0_20px_hsl(142_76%_45%/0.2)]',
-          badge: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-        };
-      case 'Unsafe':
-        return { 
-          icon: <XCircle className="h-10 w-10 md:h-12 md:w-12 text-destructive" />, 
-          color: 'text-destructive border-destructive/30 bg-destructive/5',
-          glow: 'shadow-[0_0_20px_hsl(0_72%_51%/0.2)]',
-          badge: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-        };
-      case 'Caution':
-        return { 
-          icon: <AlertCircle className="h-10 w-10 md:h-12 md:w-12 text-warning" />, 
-          color: 'text-warning border-warning/30 bg-warning/5',
-          glow: 'shadow-[0_0_20px_hsl(38_92%_50%/0.2)]',
-          badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-        };
-      default:
-        return { 
-          icon: <Info className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground" />, 
-          color: 'text-muted-foreground border-border bg-muted/5',
-          glow: '',
-          badge: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
-        };
-    }
-  };
-
-  const statusConfig = getStatusConfig();
+  const statusConfig = scanResult ? {
+    Safe: { icon: CheckCircle, color: 'text-primary', badge: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    Unsafe: { icon: XCircle, color: 'text-destructive', badge: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    Caution: { icon: AlertCircle, color: 'text-warning', badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
+    "Not Sure": { icon: Info, color: 'text-muted-foreground', badge: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400' }
+  }[scanResult.status] : null;
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto space-y-6 md:space-y-8">
-        <div className="text-center space-y-2 md:space-y-3 animate-fade-in">
-          <h1 className="text-2xl md:text-4xl font-display font-black tracking-tight flex items-center justify-center gap-3 md:gap-4">
-            <div className="p-1.5 md:p-2 bg-primary/10 rounded-lg md:rounded-xl">
-              <Leaf className="h-6 w-6 md:h-10 md:w-10 text-primary animate-pulse-slow" />
-            </div>
-            <span className="gradient-text">FRESH SCAN X</span>
-          </h1>
-          <p className="text-muted-foreground text-sm md:text-lg max-w-lg mx-auto px-4">
-            Professional AI food freshness detection with real-time decision support
-          </p>
+      <div className="max-w-6xl mx-auto space-y-6 pb-24">
+        
+        {/* Top Header & Mode Selector */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-2">
+          <div className="space-y-1 text-center md:text-left">
+            <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight gradient-text uppercase">
+              FreshScanX Industry AI
+            </h1>
+            <p className="text-xs text-muted-foreground font-bold tracking-widest uppercase flex items-center justify-center md:justify-start gap-2">
+              <Zap className="h-3 w-3 text-primary" />
+              Real-Time Inference Mode
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-2 p-1 bg-secondary/50 rounded-xl border border-border/50">
+            {(['Household', 'Retail', 'Warehouse'] as IndustryMode[]).map(mode => (
+              <Button
+                key={mode}
+                variant={industryMode === mode ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setIndustryMode(mode)}
+                className={cn("text-[10px] font-bold uppercase tracking-widest h-8 px-4", industryMode === mode && "bg-background shadow-sm")}
+              >
+                {mode}
+              </Button>
+            ))}
+          </div>
         </div>
 
-        {!isBackendReady && (
-          <div className="bg-primary/10 border border-primary/20 backdrop-blur-md px-4 py-2 md:px-6 md:py-3 rounded-xl md:rounded-2xl flex items-center justify-center gap-3 animate-pulse mx-4">
-            <Loader2 className="h-4 w-4 md:h-5 md:w-5 text-primary animate-spin" />
-            <span className="text-primary font-semibold text-xs md:text-base">Initializing AI Inference Engine...</span>
-          </div>
-        )}
+        <div className="grid lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Main Scanning Console (Left) */}
+          <div className="lg:col-span-7 space-y-6">
+            <Card variant="glass" className="overflow-hidden border-2 border-primary/10 rounded-3xl relative group">
+              <CardContent className="p-0">
+                <div className="relative aspect-[4/3] bg-black flex items-center justify-center overflow-hidden">
+                  
+                  {/* Live Stream or Static Image */}
+                  {isLive ? (
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  ) : capturedImage ? (
+                    <img src={capturedImage} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-center space-y-4">
+                      <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+                        <Camera className="h-10 w-10 text-primary/40" />
+                      </div>
+                      <p className="text-muted-foreground text-sm font-bold uppercase tracking-widest">Awaiting Input</p>
+                    </div>
+                  )}
 
-        <div className="grid lg:grid-cols-2 gap-6 md:gap-8 items-start px-2 md:px-0">
-          {/* Left Side: Scan & Preview */}
-          <div className="space-y-4 md:space-y-6">
-            <Card variant="glass" className="overflow-hidden border-2 border-primary/10 group rounded-2xl md:rounded-3xl">
-              <CardContent className="p-2 md:p-4">
-                <div className="relative aspect-[4/3] md:aspect-square lg:aspect-[4/3] bg-secondary/30 rounded-xl md:rounded-2xl overflow-hidden flex items-center justify-center border-2 border-dashed border-primary/5 transition-all group-hover:border-primary/20">
-                  {capturedImage ? (
+                  {/* Scanning Overlay */}
+                  {(scanning || autoScan) && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="absolute top-0 left-0 w-full h-1 bg-primary animate-scan z-30 shadow-[0_0_15px_rgba(34,197,94,1)]" />
+                      {autoScan && (
+                        <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1 bg-red-500 text-white rounded-full text-[10px] font-bold animate-pulse uppercase tracking-widest z-40">
+                          <Zap className="h-3 w-3" /> Live
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <canvas ref={canvasRef} className="hidden" />
+                </div>
+
+                {/* Control Bar */}
+                <div className="p-4 bg-card/80 backdrop-blur-xl border-t border-border/50 flex items-center justify-between gap-4">
+                  {!isLive && !capturedImage ? (
                     <>
-                      <img src={capturedImage} alt="Captured" className="absolute inset-0 w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      <Button onClick={startCamera} variant="outline" className="flex-1 h-12 rounded-xl gap-2 font-bold uppercase text-xs">
+                        <Camera className="h-4 w-4 text-primary" /> Start Camera
+                      </Button>
+                      <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="flex-1 h-12 rounded-xl gap-2 font-bold uppercase text-xs">
+                        <Upload className="h-4 w-4 text-primary" /> Gallery
+                      </Button>
                     </>
                   ) : (
-                    <div className="text-center space-y-3 md:space-y-4">
-                      <div className="w-16 h-16 md:w-24 md:h-24 mx-auto rounded-2xl md:rounded-3xl bg-primary/10 flex items-center justify-center shadow-inner">
-                        <Camera className="h-8 w-8 md:h-12 md:w-12 text-primary/60" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-bold text-lg md:text-xl">Ready to Scan</p>
-                        <p className="text-muted-foreground text-[10px] md:text-sm px-4">Upload or capture an item to analyze</p>
-                      </div>
+                    <div className="flex w-full gap-3">
+                      <Button onClick={resetScan} variant="ghost" className="h-12 rounded-xl text-muted-foreground hover:bg-destructive/10">
+                        <RotateCcw className="h-5 w-5" />
+                      </Button>
+                      
+                      {isLive ? (
+                        <>
+                          <Button 
+                            onClick={() => setAutoScan(!autoScan)} 
+                            variant={autoScan ? 'glow' : 'outline'} 
+                            className={cn("flex-1 h-12 rounded-xl gap-2 font-bold uppercase text-xs", autoScan && "bg-red-500/10 border-red-500/50 text-red-500")}
+                          >
+                            <Zap className={cn("h-4 w-4", autoScan && "animate-pulse")} /> {autoScan ? 'Stop Auto' : 'Auto Scan'}
+                          </Button>
+                          <Button onClick={handleManualCapture} variant="glow" className="h-12 w-12 rounded-xl p-0">
+                            <Scan className="h-6 w-6" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button onClick={() => performScan()} disabled={scanning} className="flex-1 h-12 rounded-xl font-bold uppercase text-xs gap-2">
+                          {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scan className="h-4 w-4" />} Analyze Again
+                        </Button>
+                      )}
                     </div>
                   )}
-
-                  {scanning && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-md z-20 overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-1.5 bg-primary animate-scan z-30 shadow-[0_0_15px_rgba(34,197,94,0.8)]" />
-                      <div className="text-center space-y-4 md:space-y-6">
-                        <div className="relative">
-                          <div className="w-16 h-16 md:w-24 md:h-24 border-4 border-primary/30 rounded-full animate-ping absolute inset-0" />
-                          <div className="w-16 h-16 md:w-24 md:h-24 border-4 border-primary rounded-full flex items-center justify-center bg-primary/10">
-                            <Brain className="h-8 w-8 md:h-12 md:w-12 text-primary animate-pulse" />
-                          </div>
-                        </div>
-                        <div className="space-y-1 md:space-y-2">
-                          <p className="text-primary text-base md:text-xl font-display font-bold uppercase tracking-widest">ANALYZING...</p>
-                          <p className="text-muted-foreground text-[10px] md:text-xs uppercase tracking-widest animate-pulse">Running Neural Inference</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => {
+                    handleFileUpload(e);
+                    stopCamera();
+                  }} className="hidden" />
                 </div>
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-2 gap-3 md:gap-4">
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => nativeInputRef.current?.click()}
-                disabled={scanning}
-                className="h-16 md:h-20 rounded-xl md:rounded-2xl border-2 hover:border-primary/50 hover:bg-primary/5 transition-all gap-2 md:gap-3"
-              >
-                <Camera className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-                <div className="text-left">
-                  <div className="font-bold text-sm md:text-base">Camera</div>
-                  <div className="text-[8px] md:text-[10px] text-muted-foreground uppercase tracking-wider">Live Capture</div>
-                </div>
-              </Button>
-
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={scanning}
-                className="h-16 md:h-20 rounded-xl md:rounded-2xl border-2 hover:border-primary/50 hover:bg-primary/5 transition-all gap-2 md:gap-3"
-              >
-                <Upload className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-                <div className="text-left">
-                  <div className="font-bold text-sm md:text-base">Upload</div>
-                  <div className="text-[8px] md:text-[10px] text-muted-foreground uppercase tracking-wider">Gallery</div>
-                </div>
-              </Button>
-
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-              <input ref={nativeInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
-
-              {capturedImage && (
-                <div className="col-span-2 flex gap-3 md:gap-4">
-                  {!scanResult ? (
-                    <Button
-                      variant="glow"
-                      size="lg"
-                      onClick={performScan}
-                      disabled={scanning || !isBackendReady}
-                      className="flex-1 h-16 md:h-20 rounded-xl md:rounded-2xl text-lg md:text-xl font-display font-bold tracking-tight gap-3 md:gap-4"
-                    >
-                      <Scan className="h-6 w-6 md:h-8 md:w-8" />
-                      SCAN NOW
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="lg"
-                      onClick={resetScan}
-                      className="flex-1 h-16 md:h-20 rounded-xl md:rounded-2xl border-2 hover:bg-secondary/50 gap-3 md:gap-4"
-                    >
-                      <RotateCcw className="h-6 w-6 md:h-8 md:w-8" />
-                      RESET SYSTEM
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Smart Suggested Questions */}
+            {scanResult && (
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "Why is this unsafe?",
+                  "Can I still eat it?",
+                  "Recipe suggestion?",
+                  "How to store this?",
+                  "Is it healthy?"
+                ].map(q => (
+                  <Button 
+                    key={q} 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => getAIExplanation(q)}
+                    className="rounded-full text-[10px] font-bold uppercase tracking-widest bg-secondary/30 border-primary/10 hover:bg-primary/5 hover:border-primary/30"
+                  >
+                    {q}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Right Side: Analysis Results */}
-          <div className="space-y-4 md:space-y-6 pb-4">
-            {!scanResult && !scanning && (
-              <Card className="hidden lg:flex h-full border-2 border-dashed border-muted items-center justify-center p-12 text-center bg-muted/5 rounded-3xl">
+          {/* Analysis & AI Result (Right) */}
+          <div className="lg:col-span-5 space-y-6">
+            {!scanResult && !scanning ? (
+              <Card className="h-[300px] border-2 border-dashed border-muted flex items-center justify-center p-12 text-center bg-muted/5 rounded-3xl">
                 <div className="space-y-4">
-                  <div className="w-20 h-20 mx-auto rounded-full bg-muted/20 flex items-center justify-center">
-                    <Scan className="h-10 w-10 text-muted-foreground" />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="font-bold text-xl text-muted-foreground">Waiting for Scan</h3>
-                    <p className="text-sm text-muted-foreground max-w-xs">Analysis results will appear here after scanning the item.</p>
-                  </div>
+                  <Bot className="h-12 w-12 text-muted-foreground mx-auto opacity-50" />
+                  <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest leading-relaxed">
+                    System Ready.<br/>Waiting for Image Input.
+                  </p>
                 </div>
               </Card>
-            )}
-
-            {scanResult && !scanning && (
-              <div className="space-y-4 md:space-y-6 animate-scale-in">
-                {/* Main Result Card */}
-                <Card className={cn("overflow-hidden border-2 transition-all duration-500 rounded-2xl md:rounded-3xl", statusConfig?.color, statusConfig?.glow)}>
-                  <CardHeader className="pb-1 md:pb-2 p-4 md:p-6">
+            ) : scanResult && (
+              <div className="space-y-6 animate-scale-in">
+                {/* Result Card */}
+                <Card className={cn("overflow-hidden border-2 rounded-3xl transition-all shadow-xl", 
+                  scanResult.status === 'Safe' ? 'border-primary/20 bg-primary/5' : 
+                  scanResult.status === 'Unsafe' ? 'border-destructive/20 bg-destructive/5' : 
+                  'border-warning/20 bg-warning/5'
+                )}>
+                  <CardHeader className="p-6 pb-2">
                     <div className="flex items-center justify-between">
-                      <div className={cn("px-3 py-0.5 md:px-4 md:py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-sm", statusConfig?.badge)}>
+                      <div className={cn("px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest", statusConfig?.badge)}>
                         {scanResult.status}
                       </div>
-                      <div className="flex items-center gap-1 text-muted-foreground text-[10px] md:text-xs">
-                        <Clock className="h-3 w-3" />
-                        Just now
+                      <div className="p-2 bg-background rounded-lg shadow-sm">
+                        <statusConfig.icon className={cn("h-6 w-6", statusConfig.color)} />
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-4 md:space-y-6 p-4 md:p-8 pt-0 md:pt-2">
-                    <div className="flex items-center gap-4 md:gap-6">
-                      <div className="p-3 md:p-4 rounded-xl md:rounded-2xl bg-background shadow-lg animate-float">
-                        {statusConfig?.icon}
+                  <CardContent className="p-6 pt-2 space-y-6">
+                    <div className="space-y-1">
+                      <h2 className="text-4xl font-display font-black tracking-tight leading-none uppercase">{scanResult.freshness}</h2>
+                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">{scanResult.fruit} Detected</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Confidence</p>
+                        <p className="text-2xl font-black">{scanResult.confidence.toFixed(1)}%</p>
+                        <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-primary h-full transition-all" style={{ width: `${scanResult.confidence}%` }} />
+                        </div>
                       </div>
-                      <div className="space-y-0.5 md:space-y-1">
-                        <h2 className="text-3xl md:text-4xl font-display font-black tracking-tight leading-none uppercase">
-                          {scanResult.freshness}
-                        </h2>
-                        <p className="text-muted-foreground text-xs md:text-base font-medium flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-primary animate-pulse" />
-                          Industry Grade Analysis
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Risk Factor</p>
+                        <p className={cn("text-2xl font-black", scanResult.risk_level === 'High' ? 'text-destructive' : 'text-primary')}>
+                          {scanResult.risk_level}
                         </p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 md:gap-4">
-                      <div className="p-3 md:p-4 rounded-xl bg-background/40 border border-current/10">
-                        <div className="text-[8px] md:text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-1">Confidence</div>
-                        <div className="text-xl md:text-2xl font-black">{scanResult.confidence.toFixed(1)}%</div>
-                        <div className="w-full bg-muted h-1 md:h-1.5 rounded-full mt-2 overflow-hidden">
-                          <div className="bg-primary h-full transition-all duration-1000" style={{ width: `${scanResult.confidence}%` }} />
-                        </div>
+                    <div className="p-4 bg-background/50 rounded-2xl border border-border/50 flex items-start gap-4">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <Clock className="h-5 w-5 text-primary" />
                       </div>
-                      <div className="p-3 md:p-4 rounded-xl bg-background/40 border border-current/10">
-                        <div className="text-[8px] md:text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-1">Risk Level</div>
-                        <div className={cn("text-xl md:text-2xl font-black", scanResult.risk_level === 'High' ? 'text-destructive' : 'text-primary')}>
-                          {scanResult.risk_level}
-                        </div>
-                        <div className="flex gap-1 mt-2">
-                          {[1, 2, 3].map(i => (
-                            <div key={i} className={cn("h-1 md:h-1.5 flex-1 rounded-full", 
-                              i <= (scanResult.risk_level === 'High' ? 3 : scanResult.risk_level === 'Medium' ? 2 : 1) 
-                              ? (scanResult.risk_level === 'High' ? 'bg-destructive' : 'bg-primary') 
-                              : 'bg-muted'
-                            )} />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 md:p-4 rounded-xl bg-background/40 border border-current/10 flex items-start gap-3 md:gap-4">
-                      <div className="p-1.5 md:p-2 bg-primary/10 rounded-lg shrink-0">
-                        <Clock className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                      </div>
-                      <div>
-                        <div className="text-[8px] md:text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Recommendation</div>
-                        <p className="font-bold text-xs md:text-sm mt-0.5 md:mt-1">{scanResult.consumption_window}</p>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Recommendation</p>
+                        <p className="text-sm font-bold">{scanResult.consumption_window}</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Intelligent Explanation Section */}
-                {!explanation && (
-                  <Button
-                    onClick={getAIExplanation}
-                    disabled={askingLLM}
-                    variant="outline"
-                    className="w-full h-14 md:h-16 rounded-xl md:rounded-2xl border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all gap-3"
-                  >
-                    {askingLLM ? (
-                      <>
-                        <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin text-primary" />
-                        <span className="font-bold text-sm md:text-base">Consulting Groq AI...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                        <div className="text-left">
-                          <div className="font-bold text-sm md:text-base">Why is it {scanResult.freshness.toLowerCase()}?</div>
-                          <div className="text-[8px] md:text-[10px] text-muted-foreground uppercase tracking-wider">Get AI-Powered Reasoning</div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 ml-auto text-primary" />
-                      </>
-                    )}
-                  </Button>
-                )}
-
+                {/* AI Explanation / Chat Output */}
                 {explanation && (
-                  <Card className="border-2 border-primary/20 bg-primary/5 overflow-hidden animate-scale-in rounded-2xl md:rounded-3xl">
-                    <CardHeader className="bg-primary/10 border-b border-primary/10 py-2 md:py-3 px-4 md:px-6">
-                      <div className="flex items-center gap-2 md:gap-3">
-                        <Brain className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                        <CardTitle className="text-[10px] md:text-xs font-bold uppercase tracking-widest">Groq Intelligent Insights</CardTitle>
-                      </div>
+                  <Card className="border-2 border-primary/20 bg-primary/5 rounded-3xl overflow-hidden animate-scale-in">
+                    <CardHeader className="bg-primary/10 p-4 border-b border-primary/10 flex flex-row items-center gap-3">
+                      <Brain className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-xs font-black uppercase tracking-widest">Groq Intelligence Output</CardTitle>
                     </CardHeader>
-                    <CardContent className="p-4 md:p-8">
-                      <div className="prose prose-invert prose-xs md:prose-sm max-w-none">
-                        <div className="text-foreground/90 text-sm md:text-base leading-relaxed whitespace-pre-wrap">
-                          {explanation}
-                        </div>
+                    <CardContent className="p-6">
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 font-medium">
+                        {explanation}
                       </div>
-                      <div className="mt-4 md:mt-8 pt-3 md:pt-4 border-t border-primary/10 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-[8px] md:text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-                          <ShieldCheck className="h-3 w-3 md:h-4 md:w-4 text-primary" />
-                          Safety Validated
+                      <div className="mt-6 pt-4 border-t border-primary/10 flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <ShieldCheck className="h-4 w-4 text-primary" /> Verified Analysis
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-7 md:h-8 text-[10px] md:text-xs gap-1.5 md:gap-2 hover:bg-primary/10"
-                          onClick={() => setExplanation(null)}
-                        >
-                          <RotateCcw className="h-2.5 w-2.5 md:h-3 md:w-3" />
-                          Reset
+                        <Button variant="ghost" size="sm" onClick={() => setExplanation(null)} className="h-8 text-xs font-bold text-primary">
+                          Clear
                         </Button>
                       </div>
                     </CardContent>
                   </Card>
+                )}
+
+                {askingLLM && (
+                  <div className="flex items-center justify-center p-8 bg-secondary/20 rounded-3xl border-2 border-dashed border-primary/20">
+                    <div className="text-center space-y-3">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Groq is thinking...</p>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
