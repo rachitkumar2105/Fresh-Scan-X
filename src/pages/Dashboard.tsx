@@ -28,7 +28,9 @@ import {
   History as HistoryIcon,
   PieChart,
   BarChart3,
-  Bot
+  Bot,
+  Send,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +57,7 @@ export default function Dashboard() {
   const [isLive, setIsLive] = useState(false);
   const [autoScan, setAutoScan] = useState(false);
   const [industryMode, setIndustryMode] = useState<IndustryMode>('Household');
+  const [chatInput, setChatInput] = useState('');
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -107,6 +110,19 @@ export default function Dashboard() {
     return null;
   }, []);
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setCapturedImage(base64);
+        performScan(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Scan Logic
   const performScan = async (imageToScan?: string) => {
     const image = imageToScan || capturedImage;
@@ -122,7 +138,7 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append('file', blob, 'scan.jpg');
 
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       const scanResponse = await fetch(`${apiUrl}/predict`, {
         method: 'POST',
         body: formData,
@@ -146,11 +162,10 @@ export default function Dashboard() {
         user_id: user.id,
         result: data.freshness.toLowerCase(),
         confidence: data.confidence,
-        fruit_type: data.fruit,
+        fruit_type: data.fruit === "Fruit Item" ? "Unidentified Food" : data.fruit,
         metadata: { mode: industryMode }
       });
 
-      // Auto-stop live if we found something
       if (isLive && !autoScan) stopCamera();
       
       return data;
@@ -170,7 +185,7 @@ export default function Dashboard() {
       interval = setInterval(() => {
         const frame = captureFrame();
         if (frame) performScan(frame);
-      }, 3000); // Scan every 3 seconds
+      }, 3000); 
     }
     return () => clearInterval(interval);
   }, [isLive, autoScan, scanning, captureFrame]);
@@ -189,8 +204,7 @@ export default function Dashboard() {
     
     setAskingLLM(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const apiKey = localStorage.getItem('groq_api_key');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
       
       const formData = new FormData();
       formData.append('image_data', capturedImage);
@@ -198,7 +212,6 @@ export default function Dashboard() {
       formData.append('freshness', scanResult.freshness);
       formData.append('status', scanResult.status);
       if (customPrompt) formData.append('custom_prompt', customPrompt);
-      if (apiKey) formData.append('api_key', apiKey);
 
       const response = await fetch(`${apiUrl}/explain`, {
         method: 'POST',
@@ -206,11 +219,19 @@ export default function Dashboard() {
       });
 
       const data = await response.json();
-      setExplanation(data.explanation);
+      setExplanation(data.explanation || `Error: ${data.detail || 'AI processing failed'}`);
     } catch (err) {
-      toast({ variant: 'destructive', title: 'AI Failed', description: 'Check Groq Key.' });
+      toast({ variant: 'destructive', title: 'AI Failed', description: 'Check connection.' });
     } finally {
       setAskingLLM(false);
+    }
+  };
+
+  const handleChatSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (chatInput.trim()) {
+      getAIExplanation(chatInput);
+      setChatInput('');
     }
   };
 
@@ -268,7 +289,6 @@ export default function Dashboard() {
               <CardContent className="p-0">
                 <div className="relative aspect-[4/3] bg-black flex items-center justify-center overflow-hidden">
                   
-                  {/* Live Stream or Static Image */}
                   {isLive ? (
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                   ) : capturedImage ? (
@@ -282,7 +302,6 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* Scanning Overlay */}
                   {(scanning || autoScan) && (
                     <div className="absolute inset-0 pointer-events-none">
                       <div className="absolute top-0 left-0 w-full h-1 bg-primary animate-scan z-30 shadow-[0_0_15px_rgba(34,197,94,1)]" />
@@ -297,7 +316,6 @@ export default function Dashboard() {
                   <canvas ref={canvasRef} className="hidden" />
                 </div>
 
-                {/* Control Bar */}
                 <div className="p-4 bg-card/80 backdrop-blur-xl border-t border-border/50 flex items-center justify-between gap-4">
                   {!isLive && !capturedImage ? (
                     <>
@@ -334,34 +352,49 @@ export default function Dashboard() {
                       )}
                     </div>
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => {
-                    handleFileUpload(e);
-                    stopCamera();
-                  }} className="hidden" />
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                 </div>
               </CardContent>
             </Card>
 
             {/* Smart Suggested Questions */}
             {scanResult && (
-              <div className="flex flex-wrap gap-2">
-                {[
-                  "Why is this unsafe?",
-                  "Can I still eat it?",
-                  "Recipe suggestion?",
-                  "How to store this?",
-                  "Is it healthy?"
-                ].map(q => (
-                  <Button 
-                    key={q} 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => getAIExplanation(q)}
-                    className="rounded-full text-[10px] font-bold uppercase tracking-widest bg-secondary/30 border-primary/10 hover:bg-primary/5 hover:border-primary/30"
-                  >
-                    {q}
-                  </Button>
-                ))}
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "How to preserve this?",
+                    "How will I store this?",
+                    "Within how much time should I consume?",
+                    "Is it safe to consume?",
+                    "Give me a recipe suggestion"
+                  ].map(q => (
+                    <Button 
+                      key={q} 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => getAIExplanation(q)}
+                      className="rounded-full text-[9px] font-bold uppercase tracking-widest bg-secondary/30 border-primary/10 hover:bg-primary/5 hover:border-primary/30"
+                    >
+                      {q}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Inline Chat Field */}
+                <form onSubmit={handleChatSubmit} className="flex items-center gap-2 bg-secondary/30 p-1.5 rounded-2xl border border-border/50">
+                   <div className="pl-3 p-1.5 bg-primary/10 rounded-xl">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                   </div>
+                   <input 
+                     value={chatInput}
+                     onChange={(e) => setChatInput(e.target.value)}
+                     placeholder="Ask anything about this scanned item..."
+                     className="flex-1 bg-transparent border-none outline-none text-sm px-2 py-2 placeholder:text-muted-foreground/60"
+                   />
+                   <Button type="submit" disabled={!chatInput.trim() || askingLLM} variant="glow" size="icon" className="rounded-xl h-10 w-10">
+                      {askingLLM ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                   </Button>
+                </form>
               </div>
             )}
           </div>
@@ -398,7 +431,9 @@ export default function Dashboard() {
                   <CardContent className="p-6 pt-2 space-y-6">
                     <div className="space-y-1">
                       <h2 className="text-4xl font-display font-black tracking-tight leading-none uppercase">{scanResult.freshness}</h2>
-                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-widest">{scanResult.fruit} Detected</p>
+                      <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">
+                        Analysis Complete
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -432,9 +467,14 @@ export default function Dashboard() {
                 {/* AI Explanation / Chat Output */}
                 {explanation && (
                   <Card className="border-2 border-primary/20 bg-primary/5 rounded-3xl overflow-hidden animate-scale-in">
-                    <CardHeader className="bg-primary/10 p-4 border-b border-primary/10 flex flex-row items-center gap-3">
-                      <Brain className="h-5 w-5 text-primary" />
-                      <CardTitle className="text-xs font-black uppercase tracking-widest">Groq Intelligence Output</CardTitle>
+                    <CardHeader className="bg-primary/10 p-4 border-b border-primary/10 flex flex-row items-center justify-between">
+                      <div className="flex items-center gap-3">
+                         <Brain className="h-5 w-5 text-primary" />
+                         <CardTitle className="text-xs font-black uppercase tracking-widest">AI Solution Response</CardTitle>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setExplanation(null)} className="h-8 w-8 p-0 rounded-full">
+                         <X className="h-4 w-4" />
+                      </Button>
                     </CardHeader>
                     <CardContent className="p-6">
                       <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 font-medium">
@@ -444,19 +484,19 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                           <ShieldCheck className="h-4 w-4 text-primary" /> Verified Analysis
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => setExplanation(null)} className="h-8 text-xs font-bold text-primary">
-                          Clear
-                        </Button>
+                        <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                          Llama 3.2 Vision
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {askingLLM && (
+                {askingLLM && !explanation && (
                   <div className="flex items-center justify-center p-8 bg-secondary/20 rounded-3xl border-2 border-dashed border-primary/20">
                     <div className="text-center space-y-3">
                       <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                      <p className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Groq is thinking...</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Generating Smart Suggestion...</p>
                     </div>
                   </div>
                 )}
