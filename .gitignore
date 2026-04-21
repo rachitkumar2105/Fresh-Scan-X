@@ -40,6 +40,6 @@ venv.bak/
 backend/venv/
 backend/.env
 
-# Large files (optional, but requested to link model so we KEEP it. 
-# Explicitly allowing it just in case someone adds *.pth to global ignore)
+# Large files
 !backend/fruit_checker_final.pth
+!freshscanx_final_model.keras

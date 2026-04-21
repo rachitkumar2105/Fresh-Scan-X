@@ -1,146 +1,139 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import models
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
 from PIL import Image
+import base64
+from groq import Groq
+from dotenv import load_dotenv
+from .preprocessing import preprocess_image, extract_patches
 
-from .preprocessing import extract_patches, preprocess_image
-from .feedback import generate_feedback
-
-def build_model(num_classes):
-    """
-    Reconstruct the EfficientNet-B0 architecture used during training.
-    """
-    model = models.efficientnet_b0(weights=None)
-    in_features = model.classifier[1].in_features
-    # Replace the classifier layer to match len(class_names).
-    model.classifier[1] = nn.Linear(in_features, num_classes)
-    return model
+load_dotenv()
 
 class FruitInference:
-    def __init__(self, checkpoint_path, confidence_threshold=0.65):
-        # Run the model on GPU if available, otherwise CPU.
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def __init__(self, model_path, confidence_threshold=0.5):
+        print(f"Loading Keras model from {model_path}...")
+        self.model = tf.keras.models.load_model(model_path)
         self.confidence_threshold = confidence_threshold
         
-        print(f"Loading final inference system on {self.device}...")
-        
-        # 1. Load the checkpoint correctly from fruit_checker_final.pth
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        
-        # 2. Extract class_names from the checkpoint
-        self.class_names = checkpoint['class_names']
-        
-        # 3. Reconstruct EfficientNet-B0 
-        # 4. Replace classifier layer
-        self.model = build_model(len(self.class_names))
-        
-        # 5. Load weights using checkpoint["model_state_dict"]
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        
-        self.model.to(self.device)
-        self.model.eval()
-
-    def parse_class_name(self, class_name):
-        """
-        Extract the fruit name and freshness state (Fresh or Rotten) from class names.
-        Examples: freshapples, rottenbanana, freshoranges
-        """
-        class_name = class_name.lower()
-        if class_name.startswith('fresh'):
-            freshness = 'Fresh'
-            fruit = class_name[5:]  # Remove 'fresh'
-        elif class_name.startswith('rotten'):
-            freshness = 'Rotten'
-            fruit = class_name[6:]  # Remove 'rotten'
+        # Configure Groq
+        api_key = os.getenv("GROQ_API_KEY")
+        if api_key:
+            self.groq_client = Groq(api_key=api_key)
         else:
-            freshness = 'Unknown'
-            fruit = class_name
-            
-        # Format the fruit nicely (e.g. apples -> Apple)
-        if fruit.endswith('s') and not fruit.endswith('ss'):
-            fruit = fruit[:-1]
+            self.groq_client = None
+            print("Warning: GROQ_API_KEY not found in environment.")
+
+    def update_llm_config(self, api_key):
+        if api_key:
+            self.groq_client = Groq(api_key=api_key)
+
+    def validate_image(self, image_np):
+        # 1. Resolution Check
+        h, w = image_np.shape[:2]
+        if h < 200 or w < 200:
+            return False, "⚠️ Resolution too low. Please use a clearer image."
+
+        # 2. Blur detection
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+        blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
         
-        fruit = fruit.capitalize()
+        # 3. Brightness check
+        brightness = np.mean(gray)
+        
+        if blur_score < 60:
+            return False, "⚠️ Image too blurry. Please hold steady."
+        if brightness < 40:
+            return False, "⚠️ Image too dark. Please improve lighting."
+        if brightness > 235:
+            return False, "⚠️ Too much glare. Please adjust the angle."
             
-        return fruit, freshness
+        return True, "Valid"
 
     def predict_image(self, image: Image.Image):
+        image_np = np.array(image.convert('RGB'))
+        
+        is_valid, validation_msg = self.validate_image(image_np)
+        if not is_valid:
+            return [{"error": validation_msg, "status": "invalid_input"}]
+
+        img_array = preprocess_image(image)
+        prediction = self.model.predict(img_array)[0][0]
+        
+        rotten_prob = float(prediction)
+        fresh_prob = 1.0 - rotten_prob
+        
+        confidence = max(rotten_prob, fresh_prob)
+        freshness = "Fresh" if rotten_prob < 0.5 else "Rotten"
+        
+        status = "Safe"
+        if 0.4 <= rotten_prob <= 0.6:
+            status = "Not Sure"
+        elif freshness == "Rotten":
+            status = "Unsafe"
+        elif freshness == "Fresh" and confidence < 0.7:
+            status = "Caution"
+
+        consumption_window = "Consume within 3-5 days" if freshness == "Fresh" else "Dispose immediately"
+        risk_level = "High" if freshness == "Rotten" else ("Medium" if status == "Caution" else "Low")
+
+        result = {
+            "fruit": "Fruit Item",
+            "freshness": freshness,
+            "confidence": confidence * 100,
+            "status": status,
+            "consumption_window": consumption_window,
+            "risk_level": risk_level,
+            "message": f"Detected {freshness} item ({int(confidence*100)}% confidence)",
+            "raw_score": rotten_prob
+        }
+        
+        return [result]
+
+    async def get_intelligent_analysis(self, image_bytes, fruit_hint=None):
+        if not self.groq_client:
+            return "Please configure GROQ_API_KEY for advanced analysis."
+
+        # Convert image to base64
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        
+        prompt = """
+        Analyze this food image. 
+        1. Identify the primary fruit/vegetable.
+        2. Give a detailed explanation of its freshness state.
+        3. Provide safety recommendations (Can I eat it? Can it be used in recipes?).
+        4. Suggest a consumption window.
+        Be professional and concise.
         """
-        Process input images and support multiple fruit detection 
-        using a sliding window / patch-based approach.
-        """
-        # Divide the image into smaller regions
-        patches, _ = extract_patches(image)
         
-        raw_predictions = []
-        
-        # Run prediction on each region
-        for patch in patches:
-            tensor = preprocess_image(patch).unsqueeze(0).to(self.device)
-            
-            with torch.no_grad():
-                logits = self.model(tensor)
-                
-                # Convert logits to probabilities using softmax (Confidence calibration)
-                # Temperature scaling / normalization applied implicitly via softmax.
-                probs = F.softmax(logits, dim=1)
-                
-                max_prob, max_idx = torch.max(probs, dim=1)
-                confidence = max_prob.item()
-                class_idx = max_idx.item()
-                
-            class_name = self.class_names[class_idx]
-            fruit_name, freshness = self.parse_class_name(class_name)
-            
-            # If confidence is below threshold, treat the item as an unknown fruit.
-            if confidence < self.confidence_threshold:
-                fruit_name = None 
-            
-            raw_predictions.append({
-                'fruit': fruit_name,
-                'freshness': freshness,
-                'confidence': confidence,
-            })
-            
-        # Aggregate predictions to detect multiple fruits in one image.
-        # Remove duplicate predictions using confidence thresholding.
-        
-        # Sort by confidence so that we process highest confidences first
-        raw_predictions.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        final_results = []
-        seen = set()
-        
-        for pred in raw_predictions:
-            # Create a unique key for deduplication
-            # Unknown fruit maps to (None, Freshness)
-            key = (pred['fruit'], pred['freshness'])
-            
-            if key not in seen:
-                seen.add(key)
-                
-                conf_percent = f"{int(round(pred['confidence'] * 100))}%"
-                feedback = generate_feedback(pred['fruit'], pred['freshness'])
-                
-                if pred['fruit'] is not None:
-                    res = {
-                        'Fruit': pred['fruit'],
-                        'Freshness': pred['freshness'],
-                        'Confidence': conf_percent,
-                        'Feedback': feedback
+        try:
+            chat_completion = self.groq_client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}",
+                                },
+                            },
+                        ],
                     }
-                else:
-                    res = {
-                        'Confidence': conf_percent,
-                        'Feedback': feedback
-                    }
-                final_results.append(res)
-                
-        # To avoid clutter, if we detected confident known fruits,
-        # we might want to filter out low-confidence unknowns. 
-        # But if we ONLY have unknown fruits, we return the best one.
-        known_fruits = [r for r in final_results if 'Fruit' in r]
-            
-        # If no known fruits passed the threshold, return the best unknown prediction
-        return [final_results[0]] if final_results else []
+                ],
+                model="llama-3.2-11b-vision-preview",
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            # Fallback to text-only if vision fails
+            try:
+                chat_completion = self.groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "user", "content": f"I have a fruit that was detected as {fruit_hint or 'unknown'}. Give me safety tips and storage advice."}
+                    ],
+                    model="llama-3.3-70b-versatile",
+                )
+                return chat_completion.choices[0].message.content
+            except Exception as e2:
+                return f"GROQ Analysis Error: {str(e2)}"

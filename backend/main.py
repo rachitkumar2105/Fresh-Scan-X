@@ -1,12 +1,14 @@
 import io
-import torch
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import os
+import base64
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
+from pydantic import BaseModel
 
 from .inference import FruitInference
 
-app = FastAPI()
+app = FastAPI(title="FreshScanX Industry API")
 
 # Configure CORS
 app.add_middleware(
@@ -23,26 +25,27 @@ inference_system = None
 @app.on_event("startup")
 async def load_model():
     global inference_system
-    
     try:
-        # Load the final inference system.
-        # This completely removes any references to previously used models.
+        model_path = "freshscanx_final_model.keras"
         inference_system = FruitInference(
-            checkpoint_path="backend/fruit_checker_final.pth",
-            confidence_threshold=0.65
+            model_path=model_path,
+            confidence_threshold=0.5
         )
-        print("Final model loaded successfully.")
+        print("Industry-Ready Keras Model loaded successfully.")
     except Exception as e:
-        print(f"Error loading final model: {e}")
-        raise e
+        print(f"Error loading model: {e}")
+        # Don't raise, let the health check show it
+        inference_system = None
 
-@app.api_route("/", methods=["GET", "HEAD"])
+@app.get("/")
 def home():
-    return {"message": "Final Fruit Freshness Scanner API is running"}
+    return {"message": "FreshScanX Industry AI API is running"}
 
-@app.api_route("/health", methods=["GET", "HEAD"])
+@app.get("/health")
 def health():
-    return {"status": "healthy"}
+    if inference_system:
+        return {"status": "healthy", "model": "freshscanx_final_model.keras"}
+    return {"status": "unhealthy", "error": "Model not loaded"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -54,20 +57,52 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
         
-        # Inference using the final patch-based system
+        # Inference using the new Keras system
         results = inference_system.predict_image(image)
         
-        # If the frontend expects a specific structure for a single result
-        # we can provide the best one as primary, but also provide 'all_results'
         if not results:
-            return {"error": "No fruits detected"}
+            return {"error": "No items detected"}
             
-        best_result = results[0]
-        
-        # We return the best result matching the exact schema required 
-        # (dynamically either Fruit/Freshness/Conf/Feedback OR just Conf/Feedback)
-        return best_result
+        # For simplicity, return the first (best) result
+        return results[0]
             
     except Exception as e:
-        print(e)
+        print(f"Prediction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/explain")
+async def explain(
+    image_data: str = Form(...), 
+    fruit: str = Form(None), 
+    freshness: str = Form(None), 
+    status: str = Form(None),
+    api_key: str = Form(None)
+):
+    """
+    LLM Explanation Endpoint
+    """
+    if inference_system is None:
+        raise HTTPException(status_code=500, detail="Inference system not loaded")
+    
+    try:
+        # If API key is provided from frontend, use it. Otherwise use env key.
+        if api_key:
+            inference_system.update_llm_config(api_key)
+            
+        # Decode base64 image
+        # For now, we assume image_data is the raw bytes in base64
+        if "," in image_data:
+            image_data = image_data.split(",")[1]
+            
+        image_bytes = base64.b64decode(image_data)
+        
+        analysis = await inference_system.get_intelligent_analysis(image_bytes)
+        return {"explanation": analysis}
+            
+    except Exception as e:
+        print(f"Explanation Error: {e}")
+        return {"explanation": f"Failed to generate AI analysis: {str(e)}"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

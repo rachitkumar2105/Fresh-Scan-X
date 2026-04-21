@@ -1,44 +1,38 @@
-import torch
-from torchvision import transforms
+import numpy as np
 from PIL import Image
 
-def get_transforms():
+def preprocess_image(image: Image.Image, target_size=(224, 224)):
     """
-    Returns the transformation pipeline for ImageNet-based models.
+    Preprocesses the image for TensorFlow Keras model.
     """
-    return transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                             std=[0.229, 0.224, 0.225]),
-    ])
-
-def preprocess_image(image: Image.Image):
-    transform = get_transforms()
-    return transform(image)
+    # Resize image
+    img = image.resize(target_size)
+    # Convert to numpy array
+    img_array = np.array(img).astype('float32')
+    # Normalize to [0, 1]
+    img_array /= 255.0
+    # Add batch dimension
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
 def extract_patches(image: Image.Image, patch_size=(224, 224), stride=(112, 112)):
     """
-    Extracts patches from an image using a sliding window approach for multiple fruit detection.
+    Extracts patches from an image for multi-object detection.
     """
+    width, height = image.size
     patches = []
     coords = []
-    width, height = image.size
-    
-    # If the image is smaller than the patch size, just return the resized image
+
     if width <= patch_size[0] or height <= patch_size[1]:
         return [image.resize(patch_size)], [(0, 0, width, height)]
 
-    for y in range(0, max(1, height - patch_size[1] + 1), stride[1]):
-        for x in range(0, max(1, width - patch_size[0] + 1), stride[0]):
-            box = (x, y, min(x + patch_size[0], width), min(y + patch_size[1], height))
+    for y in range(0, height - patch_size[1] + 1, stride[1]):
+        for x in range(0, width - patch_size[0] + 1, stride[0]):
+            box = (x, y, x + patch_size[0], y + patch_size[1])
             patch = image.crop(box)
-            # Resize if necessary (e.g., edge patches might be smaller)
-            if patch.size != patch_size:
-                patch = patch.resize(patch_size)
             patches.append(patch)
             coords.append(box)
-            
+    
     if not patches:
         return [image.resize(patch_size)], [(0, 0, width, height)]
         

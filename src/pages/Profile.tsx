@@ -24,6 +24,7 @@ export default function Profile() {
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [groqKey, setGroqKey] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
@@ -31,6 +32,8 @@ export default function Profile() {
   useEffect(() => {
     if (user) {
       fetchProfile();
+      const savedKey = localStorage.getItem('groq_api_key');
+      if (savedKey) setGroqKey(savedKey);
     }
   }, [user]);
 
@@ -64,6 +67,9 @@ export default function Profile() {
         }, { onConflict: 'user_id' });
 
       if (error) throw error;
+
+      // Save Groq Key to local storage
+      localStorage.setItem('groq_api_key', groqKey);
 
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -174,6 +180,18 @@ export default function Profile() {
                 className="opacity-60"
               />
               <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="groqKey">Groq API Key (for Intelligent Analysis)</Label>
+              <Input
+                id="groqKey"
+                type="password"
+                placeholder="Enter your Groq API Key"
+                value={groqKey}
+                onChange={(e) => setGroqKey(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">This key is stored locally in your browser.</p>
             </div>
 
             <div className="space-y-2">
